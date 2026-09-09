@@ -1,0 +1,398 @@
+import { canonTeam } from "./constants";
+import { getJson, settled } from "./http";
+import { americanToProb } from "./scoring";
+import type { Game, PropLine } from "./types";
+import { normalizeName } from "@/lib/utils";
+
+export type PlayerProps = {
+  line: PropLine;
+  books: Set<string>;
+};
+
+export type GameLine = {
+  homeAbbr: string;
+  awayAbbr: string;
+  total: number | null;
+  spread: number | null; // home spread (negative = home favorite)
+  books: string[];
+};
+
+export type PropsBundle = {
+  byName: Map<string, PlayerProps>;
+  byNameTeam: Map<string, PlayerProps>;
+  games: GameLine[];
+  vegasPlayers: number;
+  dkPlayers: number;
+  fdGames: number;
+};
+
+const FD_AK = "FhMFpcPWXMeyZxOx";
+
+function parseAmerican(raw: string | number | null | undefined): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const s = String(raw).trim().toUpperCase();
+  if (!s) return null;
+  if (s === "EVEN") return -100;
+  const n = Number.parseInt(s.replace("+", ""), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function playerKey(name: string, team?: string) {
+  const n = normalizeName(name);
+  return team ? `${n}|${canonTeam(team)}` : n;
+}
+
+function ensure(mapName: Map<string, PlayerProps>, mapTeam: Map<string, PlayerProps>, name: string, team: string): PlayerProps {
+  const k = playerKey(name, team);
+  let row = mapTeam.get(k) ?? mapName.get(normalizeName(name));
+  if (!row) {
+    row = { line: { books: [] }, books: new Set() };
+  }
+  mapTeam.set(k, row);
+  mapName.set(normalizeName(name), row);
+  return row;
+}
+
+function addBook(row: PlayerProps, book: string) {
+  row.books.add(book);
+  row.line.books = [...row.books];
+}
+
+function setNum(row: PlayerProps, key: keyof Omit<PropLine, "books" | "anytimeTd">, value: number, book: string) {
+  if (!Number.isFinite(value)) return;
+  const cur = row.line[key];
+  row.line[key] = cur == null ? value : (cur + value) / 2;
+  addBook(row, book);
+}
+
+function pickOuLine(
+  outcomes: { side: "over" | "under" | "other"; line: number | null; american: number | null }[],
+): number | null {
+  const byLine = new Map<number, { over?: number; under?: number }>();
+  for (const o of outcomes) {
+    if (o.line == null || !Number.isFinite(o.line)) continue;
+    const g = byLine.get(o.line) ?? {};
+    if (o.side === "over") g.over = o.american ?? g.over;
+    if (o.side === "under") g.under = o.american ?? g.under;
+    byLine.set(o.line, g);
+  }
+  let best: { line: number; score: number } | null = null;
+  for (const [line, g] of byLine) {
+    if (g.over == null || g.under == null) continue;
+    const score = Math.abs(g.over + 110) + Math.abs(g.under + 110);
+    if (!best || score < best.score) best = { line, score };
+  }
+  if (best) return best.line;
+  const first = outcomes.find((o) => o.line != null);
+  return first?.line ?? null;
+}
+
+function parsePlayerTag(raw: string): { name: string; team: string } | null {
+  const cleaned = raw.replace(/\s+-\s+\d[A-Z].*$/, "").trim();
+  const m = cleaned.match(/^(.+?)\s+\(([A-Z]{2,3})\)$/);
+  if (m?.[1] && m[2]) return { name: m[1].trim(), team: canonTeam(m[2]) };
+  return null;
+}
+
+function classifyBovada(desc: string): keyof Omit<PropLine, "books" | "anytimeTd"> | "atd" | null {
+  const d = desc.toLowerCase();
+  if (d.includes("alternate") || d.includes("who will") || d.includes("longest") || d.includes("milestone")) {
+    return null;
+  }
+  if (d.includes("anytime touchdown")) return "atd";
+  if (d.includes("passing yards")) return "passYds";
+  if (d.includes("passing touchdown")) return "passTd";
+  if (d.includes("interceptions thrown") || d.endsWith("interceptions") || d.includes("total interceptions")) {
+    return "interceptions";
+  }
+  if (d.includes("rushing yards")) return "rushYds";
+  if (d.includes("rushing touchdown")) return "rushTd";
+  if (d.includes("receiving yards")) return "recYds";
+  if (d.includes("receiving touchdown")) return "recTd";
+  if (d.includes("receptions")) return "receptions";
+  return null;
+}
+
+type BovadaOutcome = {
+  description?: string;
+  type?: string;
+  price?: { american?: string; handicap?: string | number };
+};
+type BovadaMarket = {
+  description?: string;
+  period?: { description?: string };
+  outcomes?: BovadaOutcome[];
+};
+type BovadaEvent = {
+  description?: string;
+  competitors?: { name?: string; abbreviation?: string; home?: boolean; description?: string }[];
+  displayGroups?: { description?: string; markets?: BovadaMarket[] }[];
+};
+
+function parseBovada(data: unknown, byName: Map<string, PlayerProps>, byNameTeam: Map<string, PlayerProps>, games: GameLine[]) {
+  const root = Array.isArray(data) ? data[0] : data;
+  const events = (root as { events?: BovadaEvent[] })?.events ?? [];
+  for (const ev of events) {
+    const comps = ev.competitors ?? [];
+    let home = "";
+    let away = "";
+    if (comps.length >= 2) {
+      const withHome = comps.find((c) => c.home);
+      const withAway = comps.find((c) => !c.home);
+      home = canonTeam(withHome?.abbreviation || withHome?.name || withHome?.description);
+      away = canonTeam(withAway?.abbreviation || withAway?.name || withAway?.description);
+      if (!home || !away) {
+        const a = canonTeam(comps[0]?.abbreviation || comps[0]?.name);
+        const b = canonTeam(comps[1]?.abbreviation || comps[1]?.name);
+        away = a;
+        home = b;
+      }
+    } else if (ev.description?.includes("@")) {
+      const [a, b] = ev.description.split("@");
+      away = canonTeam(a);
+      home = canonTeam(b);
+    }
+
+    let total: number | null = null;
+    let spread: number | null = null;
+
+    for (const dg of ev.displayGroups ?? []) {
+      const group = dg.description ?? "";
+      for (const m of dg.markets ?? []) {
+        const period = m.period?.description ?? "Game";
+        if (period !== "Game") continue;
+        const desc = m.description ?? "";
+        const outs = m.outcomes ?? [];
+
+        if (group === "Game Lines" && desc === "Total") {
+          const over = outs.find((o) => o.type === "O" || /^over/i.test(o.description ?? ""));
+          const h = Number.parseFloat(String(over?.price?.handicap ?? ""));
+          if (Number.isFinite(h)) total = h;
+        }
+        if (group === "Game Lines" && (desc === "Point Spread" || desc === "Spread")) {
+          const homeOut = outs.find((o) => {
+            const t = canonTeam(o.description);
+            return t === home;
+          });
+          const h = Number.parseFloat(String(homeOut?.price?.handicap ?? ""));
+          if (Number.isFinite(h)) spread = h;
+        }
+
+        const kind = classifyBovada(desc);
+        if (!kind) continue;
+
+        if (kind === "atd") {
+          for (const o of outs) {
+            const tag = parsePlayerTag(o.description ?? "");
+            if (!tag) continue;
+            const amer = parseAmerican(o.price?.american);
+            if (amer == null) continue;
+            const row = ensure(byName, byNameTeam, tag.name, tag.team);
+            const p = americanToProb(amer);
+            row.line.anytimeTd = row.line.anytimeTd == null ? p : (row.line.anytimeTd + p) / 2;
+            addBook(row, "Vegas");
+          }
+          continue;
+        }
+
+        const tag = parsePlayerTag(desc.split(" - ").slice(1).join(" - "));
+        if (!tag) continue;
+        const parsed = outs.map((o) => {
+          const side: "over" | "under" | "other" = o.type === "O" || /^over/i.test(o.description ?? "")
+            ? "over"
+            : o.type === "U" || /^under/i.test(o.description ?? "")
+              ? "under"
+              : "other";
+          const line = Number.parseFloat(String(o.price?.handicap ?? ""));
+          return {
+            side,
+            line: Number.isFinite(line) ? line : null,
+            american: parseAmerican(o.price?.american),
+          };
+        });
+        const line = pickOuLine(parsed);
+        if (line == null) continue;
+        const row = ensure(byName, byNameTeam, tag.name, tag.team);
+        setNum(row, kind, line, "Vegas");
+      }
+    }
+
+    if (home && away) {
+      games.push({ homeAbbr: home, awayAbbr: away, total, spread, books: total != null ? ["Vegas"] : [] });
+    }
+  }
+}
+
+type FdMarket = {
+  marketType?: string;
+  eventId?: number;
+  marketName?: string;
+  runners?: {
+    runnerName?: string;
+    handicap?: number;
+    result?: { type?: string };
+    winRunnerOdds?: { americanDisplayOdds?: { americanOdds?: number } };
+  }[];
+};
+type FdEvent = { eventId?: number; name?: string };
+
+function parseFanDuelGames(data: unknown, games: GameLine[]) {
+  const root = data as { attachments?: { events?: Record<string, FdEvent>; markets?: Record<string, FdMarket> } };
+  const events = root.attachments?.events ?? {};
+  const markets = root.attachments?.markets ?? {};
+  const byEvent = new Map<number, GameLine>();
+  for (const ev of Object.values(events)) {
+    if (!ev.eventId || !ev.name?.includes("@")) continue;
+    const [a, b] = ev.name.split("@");
+    const away = canonTeam(a);
+    const home = canonTeam(b);
+    if (!home || !away) continue;
+    byEvent.set(ev.eventId, { homeAbbr: home, awayAbbr: away, total: null, spread: null, books: [] });
+  }
+  for (const m of Object.values(markets)) {
+    const g = m.eventId != null ? byEvent.get(m.eventId) : undefined;
+    if (!g) continue;
+    if (m.marketType === "TOTAL_POINTS_(OVER/UNDER)") {
+      const over = m.runners?.find((r) => /over/i.test(r.runnerName ?? ""));
+      const line = Number(over?.handicap);
+      if (Number.isFinite(line)) {
+        g.total = g.total == null ? line : (g.total + line) / 2;
+        if (!g.books.includes("FanDuel")) g.books.push("FanDuel");
+      }
+    }
+    if (m.marketType === "MATCH_HANDICAP_(2-WAY)") {
+      const homeRunner = m.runners?.find((r) => canonTeam(r.runnerName) === g.homeAbbr);
+      const line = Number(homeRunner?.handicap);
+      if (Number.isFinite(line)) {
+        g.spread = g.spread == null ? line : (g.spread + line) / 2;
+        if (!g.books.includes("FanDuel")) g.books.push("FanDuel");
+      }
+    }
+  }
+  for (const g of byEvent.values()) {
+    if (g.total == null && g.spread == null) continue;
+    const existing = games.find((x) => x.homeAbbr === g.homeAbbr && x.awayAbbr === g.awayAbbr);
+    if (existing) {
+      if (g.total != null) existing.total = existing.total == null ? g.total : (existing.total + g.total) / 2;
+      if (g.spread != null) existing.spread = existing.spread == null ? g.spread : (existing.spread + g.spread) / 2;
+      for (const b of g.books) if (!existing.books.includes(b)) existing.books.push(b);
+    } else {
+      games.push(g);
+    }
+  }
+}
+
+export type EspnPropIndex = Map<string, PlayerProps>;
+
+function mergePropRows(a: PlayerProps, b: PlayerProps): PlayerProps {
+  const keys: (keyof Omit<PropLine, "books">)[] = [
+    "passYds",
+    "passTd",
+    "interceptions",
+    "rushYds",
+    "rushTd",
+    "receptions",
+    "recYds",
+    "recTd",
+    "anytimeTd",
+  ];
+  const line: PropLine = { books: [] };
+  for (const k of keys) {
+    const av = a.line[k];
+    const bv = b.line[k];
+    if (av != null && bv != null) {
+      const gap = Math.abs(av - bv) / Math.max(av, bv, 0.01);
+      line[k] = gap > 0.45 ? Math.min(av, bv) : (av + bv) / 2;
+    } else line[k] = av ?? bv;
+  }
+  const books = new Set([...a.books, ...b.books]);
+  line.books = [...books];
+  return { line, books };
+}
+
+export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropIndex }> {
+  const byName = new Map<string, PlayerProps>();
+  const byNameTeam = new Map<string, PlayerProps>();
+  const games: GameLine[] = [];
+
+  // Vegas (Bovada) carries weekly player props. FanDuel's public NFL page is game
+  // totals/spreads — season-long player props are ignored. ESPN DK propBets are
+  // paginated (30+ pages/game) and blow the slate budget; skip them.
+  const [bovada, fd] = await Promise.all([
+    settled(getJson<unknown>("https://www.bovada.lv/services/sports/event/coupon/events/A/description/football/nfl?lang=en", undefined, 28000)),
+    settled(
+      getJson<unknown>(
+        `https://sbapi.nj.sportsbook.fanduel.com/api/content-managed-page?page=CUSTOM&customPageId=nfl&_ak=${FD_AK}`,
+        undefined,
+        14000,
+      ),
+    ),
+  ]);
+
+  if (bovada) {
+    try {
+      parseBovada(bovada, byName, byNameTeam, games);
+    } catch {
+      /* ignore parse errors */
+    }
+  }
+  if (fd) {
+    try {
+      parseFanDuelGames(fd, games);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const unique = new Set(byName.values());
+  return {
+    byName,
+    byNameTeam,
+    games,
+    vegasPlayers: [...unique].filter((p) => p.books.has("Vegas")).length,
+    dkPlayers: 0,
+    fdGames: games.filter((g) => g.books.includes("FanDuel")).length,
+    byEspnId: new Map(),
+  };
+}
+
+export function lookupProps(
+  bundle: PropsBundle & { byEspnId: EspnPropIndex },
+  name: string,
+  team: string,
+  espnId?: string | number | null,
+): PlayerProps | null {
+  const fromEspn = espnId != null ? bundle.byEspnId.get(String(espnId)) : undefined;
+  const fromVegas =
+    bundle.byNameTeam.get(`${normalizeName(name)}|${canonTeam(team)}`) ?? bundle.byName.get(normalizeName(name));
+  if (fromEspn && fromVegas) return mergePropRows(fromVegas, fromEspn);
+  return fromVegas ?? fromEspn ?? null;
+}
+
+export function applyGameLines(games: Game[], lines: GameLine[]) {
+  for (const g of games) {
+    const hit =
+      lines.find((l) => l.homeAbbr === g.homeAbbr && l.awayAbbr === g.awayAbbr) ??
+      lines.find((l) => l.homeAbbr === g.awayAbbr && l.awayAbbr === g.homeAbbr);
+    if (!hit) {
+      g.total = g.total ?? null;
+      g.spread = g.spread ?? null;
+      g.homeImplied = g.homeImplied ?? null;
+      g.awayImplied = g.awayImplied ?? null;
+      continue;
+    }
+    const total = hit.total;
+    let spread = hit.spread;
+    if (spread != null && hit.homeAbbr === g.awayAbbr) spread = -spread;
+    g.total = total;
+    g.spread = spread;
+    if (total != null && spread != null) {
+      g.homeImplied = Math.round((total / 2 - spread / 2) * 10) / 10;
+      g.awayImplied = Math.round((total / 2 + spread / 2) * 10) / 10;
+    } else {
+      g.homeImplied = null;
+      g.awayImplied = null;
+    }
+  }
+}

@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-background: #0b0d0c;
+  --color-foreground: #e8ece8;
+  --color-card: #121614;
+  --color-card-foreground: #e8ece8;
+  --color-popover: #161b18;
+  --color-popover-foreground: #e8ece8;
+  --color-primary: #d7ddd8;
+  --color-primary-foreground: #0b0d0c;
+  --color-secondary: #191d1b;
+  --color-secondary-foreground: #e8ece8;
+  --color-muted: #191d1b;
+  --color-muted-foreground: #8a918c;
+  --color-accent: #1c221e;
+  --color-accent-foreground: #e8ece8;
+  --color-destructive: #c47a72;
+  --color-destructive-foreground: #e8ece8;
+  --color-border: rgb(232 236 232 / 0.1);
+  --color-input: rgb(232 236 232 / 0.12);
+  --color-ring: #c5cdc6;
+  --color-value: #8fbf9a;
+  --color-warn: #c4a574;
+  --color-hot: #9eb0a4;
+  --color-faint: #5c635e;
+  --color-field: #0e1210;
+  --color-ink: #c5cdc6;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius: 10px;
+
+  --shadow-border: 0 0 0 1px rgb(232 236 232 / 0.08);
+  --shadow-border-hover: 0 0 0 1px rgb(232 236 232 / 0.14);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    font-family: var(--font-display);
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+.hash-bg {
+  background-image:
+    linear-gradient(rgb(232 236 232 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(232 236 232 / 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center top;
+}
