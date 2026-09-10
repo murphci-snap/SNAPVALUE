@@ -40,7 +40,7 @@ export function relativeTime(iso: string, now = Date.now()): string {
 
 export function rankingLabel(p: Player): string {
   if (p.rankingMethod === "props") return "Vegas";
-  if (p.rankingMethod === "consensus") return "Consensus";
+  if (p.rankingMethod === "consensus") return "Yahoo · CBS · FP";
   return "FPPG";
 }
 

@@ -29,6 +29,18 @@ export async function getText(url: string, init?: RequestInit, timeoutMs = 14000
   return await res.text();
 }
 
+export async function getHtml(url: string, timeoutMs = 14000): Promise<string> {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": UA,
+      Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${url}`);
+  return await res.text();
+}
+
 export async function settled<T>(p: Promise<T>): Promise<T | null> {
   try {
     return await p;

@@ -23,7 +23,7 @@ export function ItFactorRack({
     <section>
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="display text-xl font-semibold">IT Factor</h2>
-        <p className="text-faint text-[11px] tracking-wide uppercase">Grok + Vegas · 2–3 smash weeks</p>
+        <p className="text-faint text-[11px] tracking-wide uppercase">Grok + Vegas + X tape · smash weeks</p>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {groups.map((group) => (

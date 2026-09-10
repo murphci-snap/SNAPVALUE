@@ -2,7 +2,7 @@
 
 Weekly DraftKings Classic DFS football research, plus survivor / loser pool tickets and a weekly betting desk.
 
-Vegas / FanDuel player props, consensus rankings, IT Factor smash spots, pts/$ value, random optimum $50k Classic lineups, multi-entry survivor and loser strategies, three best bets, a spread lock, and a two-player anytime TD.
+Vegas / FanDuel player props, then Yahoo, CBS Sports, FantasyPros (150+ experts, including X), IT Factor smash spots, pts/$ value, random optimum $50k Classic lineups, multi-entry survivor and loser strategies, three best bets, a spread lock, and a two-player anytime TD.
 
 **DFS stack:** QB + 2 RB + 3 WR + TE + FLEX + DST · $50,000 salary cap.
 
@@ -15,7 +15,7 @@ Vegas / FanDuel player props, consensus rankings, IT Factor smash spots, pts/$ v
 
 ## Live data
 
-No database and no API keys. The site pulls public slate data on a timer (about every two hours) from DraftKings, Vegas/Bovada props, FanDuel game totals, ESPN, RotoWire/Sleeper, and FantasyPros.
+No database and no API keys. The site pulls public slate data on a timer from DraftKings, Vegas/Bovada props, FanDuel game totals, Yahoo, CBS Sports, FantasyPros, and a model read of public X tape. ESPN is not used for rankings.
 
 ## Deploy on Vercel
 

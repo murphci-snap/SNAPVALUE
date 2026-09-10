@@ -15,9 +15,9 @@ export function PprBoard({ data }: { data: SlateData }) {
         <p className="display text-faint text-xs tracking-[0.18em] uppercase">Season-long · not DFS</p>
         <h2 className="display text-2xl leading-none font-semibold">Weekly PPR ranks</h2>
         <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-          ESPN-style PPR for this week. Vegas / FanDuel player props when posted, otherwise an average of public
-          boards plus Grok. Tape notes are model reads of the market and public chatter on X — not a live scrape of
-          any one capper.
+          Full-PPR ranks for this week. Vegas / FanDuel props when posted, otherwise Yahoo, CBS Sports, and FantasyPros
+          (150+ experts, including voices who post on X). Tape notes are a model read of that public chatter — not a live
+          scrape of any one account.
         </p>
       </header>
 

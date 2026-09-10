@@ -194,12 +194,24 @@ function Header({
     return () => window.clearInterval(id);
   }, [data.fetchedAt]);
   return (
-    <header className="border-border/80 sticky top-0 z-30 border-b bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-4 py-3 lg:px-6">
-        <div className="min-w-0 shrink-0">
-          <p className="display hidden text-[11px] tracking-[0.22em] text-faint uppercase sm:block">DFS · Pools · Bets</p>
-          <h1 className="display text-2xl leading-none font-semibold tracking-wide sm:text-3xl">SNAPVALUE</h1>
+    <header className="border-border/80 border-b">
+      <div className="relative overflow-hidden">
+        <img
+          src="/command-center.jpg"
+          alt=""
+          className="h-40 w-full object-cover object-center sm:h-52 lg:h-60"
+        />
+        <div className="from-background absolute inset-0 bg-gradient-to-t via-background/55 to-background/20" />
+        <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[1440px] px-4 pb-4 lg:px-6">
+          <p className="display text-ink text-[11px] tracking-[0.28em] uppercase">SNAPVALUE</p>
+          <h1 className="display text-4xl leading-none font-semibold tracking-wide sm:text-5xl">DFS Command Center</h1>
+          <p className="text-muted-foreground mt-1.5 max-w-xl text-sm sm:text-base">
+            Read the tape. Spend the cap. Smash the slate.
+          </p>
         </div>
+      </div>
+      <div className="border-border/80 sticky top-0 z-30 border-t bg-background/85 backdrop-blur-md">
+      <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-4 py-3 lg:px-6">
         <span className="bg-secondary text-muted-foreground rounded-full px-3 py-1 font-mono text-xs">
           WK {data.week}
         </span>
@@ -232,6 +244,7 @@ function Header({
             {s.suffix} · {s.gameCount}g
           </button>
         ))}
+      </div>
       </div>
     </header>
   );
@@ -316,7 +329,7 @@ function BootScreen() {
   return (
     <div className="hash-bg flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
       <p className="display text-4xl font-semibold tracking-wide">SNAPVALUE</p>
-      <p className="text-muted-foreground text-sm">Pulling Vegas props, consensus rankings, and matchups…</p>
+      <p className="text-muted-foreground text-sm">Pulling Yahoo, CBS, FantasyPros, Vegas props, and X tape…</p>
     </div>
   );
 }

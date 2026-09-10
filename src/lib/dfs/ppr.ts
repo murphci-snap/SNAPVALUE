@@ -1,4 +1,5 @@
-import type { Player, Position } from "./types";
+import { xTape, xTapeNudge } from "./x-tape";
+import type { Player } from "./types";
 
 export type PprGroup = "QB" | "RB" | "WR" | "TE" | "FLEX" | "DST";
 
@@ -29,7 +30,7 @@ function tdShare(p: Player): { rushTd: number; recTd: number; passTd: number } {
   return { rushTd, recTd, passTd };
 }
 
-/** ESPN-style weekly PPR (no DK bonuses). Props first, then week stats. */
+/** Weekly PPR (no DK bonuses). Props first, then Yahoo / CBS / FantasyPros. */
 export function pprPoints(p: Player): number {
   if (p.position === "DST") {
     const w = p.week;
@@ -65,21 +66,14 @@ function dstPa(pts: number): number {
 }
 
 function tapeFor(p: Player): string {
-  const bits: string[] = [];
-  if (p.rankingMethod === "props") bits.push("Vegas/FD props posted");
-  if (p.itFactor) bits.push("smash-week chatter");
-  if (p.cheapImpact) bits.push("streamer dart on X");
-  if (p.oppRank >= 24) bits.push("public fading this defense");
-  else if (p.oppRank <= 8) bits.push("sharp fade vs this D");
-  if (p.anytimeTd != null && p.anytimeTd >= 0.4) bits.push("ATD juiced on the board");
-  if (!bits.length) bits.push("consensus boards + Grok");
-  return bits.slice(0, 2).join(" · ");
+  return xTape(p);
 }
 
 function methodFor(p: Player): string {
+  const sites = p.sources.filter((s) => s.kind === "site").map((s) => s.label.split(" (")[0]!);
   if (p.rankingMethod === "props") return "Vegas props";
-  if (p.sources.some((s) => s.kind === "site")) return "Multi-site avg";
-  return "Grok + tape";
+  if (sites.length) return `${[...new Set(sites)].slice(0, 3).join(" · ")} + X`;
+  return "Yahoo · CBS · FP + X";
 }
 
 export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
@@ -93,7 +87,7 @@ export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
   const scored = pool
     .map((player) => ({
       player,
-      ppr: Math.round(pprPoints(player) * 10) / 10,
+      ppr: Math.round((pprPoints(player) + xTapeNudge(player)) * 10) / 10,
       method: methodFor(player),
       tape: tapeFor(player),
       rank: 0,

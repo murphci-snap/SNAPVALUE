@@ -5,7 +5,7 @@ import { getJson, settled } from "./http";
 import { markItFactor } from "./it-factor";
 import { markCheapImpact } from "./sleeper";
 import { applyGameLines, loadProps, lookupProps } from "./props";
-import { loadFantasyPros, loadSleeper, lookupSite } from "./projections";
+import { loadCbs, loadFantasyProsEcr, loadYahoo, lookupSite } from "./projections";
 import { dkFromProps, dkFromWeek, emptyWeek, fillWeek, matchupMultiplier, mean, round1, round2, seasonFromEspn, weekFromEspn } from "./scoring";
 import type {
   DataSourceInfo,
@@ -21,7 +21,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 5;
+const CACHE_VER = 6;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -198,8 +198,7 @@ function espnStats(player: NonNullable<EspnPlayerRow["player"]>, season: number,
 
 type SlateDataOk = Extract<SlateResponse, { ok: true }>;
 
-const EMPTY_SLEEPER = { byName: new Map(), byNameTeam: new Map(), ok: false, players: 0 };
-const EMPTY_FP = { byName: new Map(), byNameTeam: new Map(), ok: false, players: 0 };
+const EMPTY_SITE = { byName: new Map(), byNameTeam: new Map(), ok: false, players: 0 };
 
 const EMPTY_PROPS: Awaited<ReturnType<typeof loadProps>> = {
   byName: new Map(),
@@ -265,8 +264,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
   const onVercel = Boolean(process.env.VERCEL);
   const extrasMs = onVercel ? 7000 : 28000;
   const espnMs = onVercel ? 6000 : 20000;
-  const fpMs = onVercel ? 5000 : 14000;
-  const sleeperMs = onVercel ? 7000 : 22000;
+  const siteMs = onVercel ? 6500 : 18000;
 
   try {
     const [state, groupsJson] = await Promise.all([
@@ -288,8 +286,9 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       slates.find((s) => /wed-mon/i.test(s.suffix)) ??
       slates[0]!;
 
-    const sleeperP = withTimeout(loadSleeper(season, week), sleeperMs, EMPTY_SLEEPER);
-    const fpP = withTimeout(loadFantasyPros(), fpMs, EMPTY_FP);
+    const yahooP = withTimeout(loadYahoo(), siteMs, EMPTY_SITE);
+    const cbsP = withTimeout(loadCbs(season, week), siteMs, EMPTY_SITE);
+    const fpP = withTimeout(loadFantasyProsEcr(week), siteMs, EMPTY_SITE);
     const propsP = withTimeout(loadProps(), extrasMs, EMPTY_PROPS);
 
     const espnFilter = JSON.stringify({
@@ -303,7 +302,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       },
     });
 
-    const [draftablesJson, espnJson, sleeperIdx, fpIdx, propsBundle] = await Promise.all([
+    const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, propsBundle] = await Promise.all([
       getJson<{ draftables: DkDraftable[]; competitions: DkCompetition[] }>(
         `https://api.draftkings.com/draftgroups/v1/draftgroups/${selected.draftGroupId}/draftables`,
       ),
@@ -314,7 +313,8 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
           espnMs,
         ),
       ),
-      sleeperP,
+      yahooP,
+      cbsP,
       fpP,
       propsP,
     ]);
@@ -380,21 +380,19 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       let weekProj = parsed.weekProj;
       if (weekProj) weekProj.dk = dkFromWeek(weekProj, position);
 
-      const sleeper = lookupSite(sleeperIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(sleeperIdx, `${team} DST`, team) : undefined);
+      const yahoo = lookupSite(yahooIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(yahooIdx, `${team} DST`, team) : undefined);
+      const cbs = lookupSite(cbsIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(cbsIdx, `${team} DST`, team) : undefined);
       const fp = lookupSite(fpIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(fpIdx, `${team} DST`, team) : undefined);
       const props = lookupProps(propsBundle, d.displayName, team, ep?.id);
 
       const sources: SourceProjection[] = [];
-      let espnPts: number | null = null;
-      if (weekProj && weekProj.dk > 1) espnPts = round1(weekProj.dk);
-      else if (weekProj && weekProj.espnPpr > 1 && position !== "DST") espnPts = round1(weekProj.espnPpr);
-      if (espnPts != null) sources.push({ id: "espn", label: "ESPN", points: espnPts, kind: "site" });
-      if (sleeper) sources.push({ id: sleeper.id, label: sleeper.label, points: sleeper.points, kind: "site" });
+      if (yahoo) sources.push({ id: yahoo.id, label: yahoo.label, points: yahoo.points, kind: "site" });
+      if (cbs) sources.push({ id: cbs.id, label: cbs.label, points: cbs.points, kind: "site" });
       if (fp) sources.push({ id: fp.id, label: fp.label, points: fp.points, kind: "site" });
 
-      if (sleeper?.week) {
-        weekProj = fillWeek(weekProj ?? emptyWeek(), sleeper.week);
-        if (!weekProj.dk) weekProj.dk = sleeper.points;
+      if (cbs?.week) {
+        weekProj = fillWeek(weekProj ?? emptyWeek(), cbs.week);
+        if (!weekProj.dk) weekProj.dk = cbs.points;
       }
       if (props?.line && position !== "DST") {
         weekProj = fillWeek(weekProj ?? emptyWeek(), {
@@ -565,9 +563,9 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       { id: "draftkings", label: "DraftKings", ok: trimmed.length > 0, players: trimmed.length },
       { id: "vegas", label: "Vegas props", ok: propsBundle.vegasPlayers > 0, players: propsBundle.vegasPlayers },
       { id: "fanduel", label: "FanDuel totals", ok: propsBundle.fdGames > 0, players: propsBundle.fdGames },
-      { id: "espn", label: "ESPN", ok: (espnJson?.players?.length ?? 0) > 0, players: espnJson?.players?.length ?? 0 },
-      { id: "rotowire", label: "RotoWire", ok: sleeperIdx.ok, players: sleeperIdx.players },
-      { id: "fantasypros", label: "FantasyPros", ok: fpIdx.ok, players: fpIdx.players },
+      { id: "yahoo", label: "Yahoo", ok: yahooIdx.ok, players: yahooIdx.players },
+      { id: "cbs", label: "CBS Sports", ok: cbsIdx.ok, players: cbsIdx.players },
+      { id: "fantasypros", label: "FantasyPros + X", ok: fpIdx.ok, players: fpIdx.players },
     ];
 
     const value = compactSlate({

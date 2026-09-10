@@ -1,5 +1,5 @@
 import { canonTeam } from "./constants";
-import { getJson, getText, settled } from "./http";
+import { getHtml, getJson, getText, poolMap, settled } from "./http";
 import { dkFromWeek, round1 } from "./scoring";
 import type { Position, WeekProjection } from "./types";
 import { normalizeName } from "@/lib/utils";
@@ -192,6 +192,118 @@ export async function loadFantasyPros(): Promise<SiteIndex> {
   return idx;
 }
 
+function stripTags(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&/g, "&").replace(/\s+/g, " ").trim();
+}
+
+function extractBrace(html: string, marker: string): string | null {
+  const start = html.indexOf(marker);
+  if (start < 0) return null;
+  const i = html.indexOf("{", start);
+  if (i < 0) return null;
+  let depth = 0;
+  for (let j = i; j < html.length; j++) {
+    const c = html[j];
+    if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) return html.slice(i, j + 1);
+    }
+  }
+  return null;
+}
+
+export async function loadFantasyProsEcr(week: number): Promise<SiteIndex> {
+  const idx: SiteIndex = { byName: new Map(), byNameTeam: new Map(), ok: false, players: 0 };
+  const pages = [
+    `https://www.fantasypros.com/nfl/rankings/ppr-flex.php?week=${week}`,
+    `https://www.fantasypros.com/nfl/rankings/ppr-qb.php?week=${week}`,
+    `https://www.fantasypros.com/nfl/rankings/dst.php?week=${week}`,
+  ];
+  const htmls = await poolMap(pages, 3, (url) => getHtml(url, 12000), 16000);
+  for (const html of htmls) {
+    const blob = extractBrace(html, "var ecrData");
+    if (!blob) continue;
+    try {
+      const data = JSON.parse(blob) as {
+        players?: Array<{
+          player_name?: string;
+          player_team_id?: string;
+          player_position_id?: string;
+          r2p_pts?: string | number;
+          rank_ecr?: number;
+        }>;
+        total_experts?: number;
+      };
+      for (const p of data.players ?? []) {
+        const name = (p.player_name ?? "").trim();
+        const team = canonTeam(p.player_team_id);
+        const pts = n(p.r2p_pts);
+        if (!name || pts <= 0) continue;
+        const pos = (p.player_position_id ?? "").toUpperCase();
+        const label = data.total_experts ? `FantasyPros (${data.total_experts} experts)` : "FantasyPros";
+        put(idx, name, team, { id: "fantasypros", label, points: round1(pts) });
+        if ((pos === "DST" || pos === "DEF") && team) {
+          put(idx, `${team} DST`, team, { id: "fantasypros", label, points: round1(pts) });
+        }
+      }
+    } catch {
+      /* skip page */
+    }
+  }
+  idx.ok = idx.players > 0;
+  return idx;
+}
+
+export async function loadCbs(season: number, week: number): Promise<SiteIndex> {
+  const idx: SiteIndex = { byName: new Map(), byNameTeam: new Map(), ok: false, players: 0 };
+  const positions = ["QB", "RB", "WR", "TE", "DST"];
+  const htmls = await poolMap(
+    positions,
+    3,
+    (pos) => getHtml(`https://www.cbssports.com/fantasy/football/stats/${pos}/${season}/${week}/projections/ppr/`, 12000),
+    16000,
+  );
+  for (const html of htmls) {
+    const tbody = html.match(/<tbody[\s\S]*?<\/tbody>/i)?.[0] ?? html;
+    const rows = tbody.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
+    for (const row of rows) {
+      const name = stripTags(row.match(/CellPlayerName--long[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? "");
+      const team = canonTeam(stripTags(row.match(/CellPlayerName-team[^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? ""));
+      const tds = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => stripTags(m[1] ?? ""));
+      const pts = n(tds[tds.length - 1]);
+      if (!name || pts <= 0) continue;
+      put(idx, name, team, { id: "cbs", label: "CBS Sports", points: round1(pts) });
+      if (/dst|def/i.test(name) && team) put(idx, `${team} DST`, team, { id: "cbs", label: "CBS Sports", points: round1(pts) });
+    }
+  }
+  idx.ok = idx.players > 0;
+  return idx;
+}
+
+type YahooRow = { name?: string; team?: string; position?: string; fppg?: number; salary?: number };
+
+export async function loadYahoo(): Promise<SiteIndex> {
+  const idx: SiteIndex = { byName: new Map(), byNameTeam: new Map(), ok: false, players: 0 };
+  const json = await settled(
+    getJson<{ players?: { result?: YahooRow[] } }>("https://dfyql-ro.sports.yahoo.com/v2/external/playersFeed/nfl", undefined, 12000),
+  );
+  const rows = json?.players?.result ?? [];
+  for (const row of rows) {
+    const name = (row.name ?? "").trim();
+    const team = canonTeam(row.team);
+    const pts = n(row.fppg);
+    if (!name || pts <= 0.5) continue;
+    put(idx, name, team, { id: "yahoo", label: "Yahoo", points: round1(pts) });
+    if ((row.position === "DEF" || row.position === "DST") && team) {
+      put(idx, `${team} DST`, team, { id: "yahoo", label: "Yahoo", points: round1(pts) });
+    }
+  }
+  idx.ok = idx.players > 0;
+  return idx;
+}
+
 export function lookupSite(idx: SiteIndex, name: string, team: string): SiteProj | undefined {
   return idx.byNameTeam.get(`${normalizeName(name)}|${canonTeam(team)}`) ?? idx.byName.get(normalizeName(name));
 }
+

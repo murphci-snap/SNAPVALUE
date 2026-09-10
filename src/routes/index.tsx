@@ -30,7 +30,7 @@ function Pending() {
   return (
     <div className="hash-bg flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
       <p className="display text-4xl font-semibold tracking-wide">SNAPVALUE</p>
-      <p className="text-muted-foreground text-sm">Pulling Vegas props, consensus rankings, and matchups…</p>
+      <p className="text-muted-foreground text-sm">Pulling Yahoo, CBS, FantasyPros, Vegas props, and X tape…</p>
     </div>
   );
 }

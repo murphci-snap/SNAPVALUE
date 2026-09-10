@@ -289,7 +289,7 @@ export function PlayerBoard({
           </table>
         </div>
         <p className="text-faint px-3 py-2 text-[11px]">
-          Showing {Math.min(filtered.length, 220)} of {filtered.length} · DraftKings Classic $50,000 · rankings use Vegas player props when posted, otherwise the average of ESPN, RotoWire, and FantasyPros
+          Showing {Math.min(filtered.length, 220)} of {filtered.length} · DraftKings Classic $50,000 · rankings use Vegas player props when posted, otherwise the average of Yahoo, CBS Sports, FantasyPros, and public X tape
         </p>
       </div>
       ) : (
