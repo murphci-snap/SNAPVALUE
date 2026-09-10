@@ -2,10 +2,12 @@ import { Copy, Lock, RefreshCw, Sparkles, Unlock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { generateLineups, lineupAsText } from "@/lib/dfs/optimizer";
+import { CONTEST_META, generateLineups, lineupAsText, type ContestStyle } from "@/lib/dfs/optimizer";
 import { SLOT_LABEL } from "@/lib/dfs/constants";
 import type { Lineup, Player } from "@/lib/dfs/types";
 import { cn, formatPts, formatUsd } from "@/lib/utils";
+
+const CONTESTS: ContestStyle[] = ["single", "milly", "small"];
 
 export function LineupStudio({
   players,
@@ -20,12 +22,13 @@ export function LineupStudio({
 }) {
   const [count, setCount] = useState(6);
   const [stack, setStack] = useState(true);
+  const [contest, setContest] = useState<ContestStyle>("single");
   const [seed, setSeed] = useState(1);
   const [copied, setCopied] = useState<string | null>(null);
 
   const lineups = useMemo(
-    () => generateLineups(players, count, seed, { stackQb: stack, locks, excludes }),
-    [players, count, seed, stack, locks, excludes],
+    () => generateLineups(players, count, seed, { stackQb: stack, locks, excludes, contest }),
+    [players, count, seed, stack, locks, excludes, contest],
   );
 
   function copy(lineup: Lineup) {
@@ -64,15 +67,35 @@ export function LineupStudio({
           >
             {stack ? "QB stack on" : "QB stack off"}
           </Button>
-          <Button
-            size="sm"
-            onClick={() => setSeed(Date.now())}
-          >
+          <Button size="sm" onClick={() => setSeed(Date.now())}>
             <RefreshCw />
             Shuffle
           </Button>
         </div>
       </header>
+
+      <div>
+        <p className="text-faint mb-1.5 text-[10px] tracking-[0.16em] uppercase">Contest</p>
+        <div className="flex flex-wrap gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
+          {CONTESTS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setContest(id);
+                setSeed((s) => s + 1);
+              }}
+              className={cn(
+                "h-11 flex-1 rounded-md px-3 text-sm font-medium transition-colors duration-150 sm:flex-none",
+                contest === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {CONTEST_META[id].label}
+            </button>
+          ))}
+        </div>
+        <p className="text-muted-foreground mt-2 max-w-2xl text-sm">{CONTEST_META[contest].blurb}</p>
+      </div>
 
       {locks.length > 0 && (
         <p className="text-muted-foreground text-xs">
@@ -97,6 +120,7 @@ export function LineupStudio({
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="display text-lg font-semibold">{lu.id}</span>
+                  <Badge variant="outline">{CONTEST_META[contest].label}</Badge>
                   {lu.stacks.map((s) => (
                     <Badge key={s} variant="hot">
                       {s}
@@ -121,9 +145,7 @@ export function LineupStudio({
                   <span className="text-faint">SAL </span>
                   {formatUsd(lu.salary)}
                 </span>
-                <span className="text-value">
-                  {formatUsd(lu.remaining)} left
-                </span>
+                <span className="text-value">{formatUsd(lu.remaining)} left</span>
               </div>
               <ul className="divide-border divide-y">
                 {lu.players.map((lp) => {
@@ -137,7 +159,7 @@ export function LineupStudio({
                         {lp.player.name}
                         <span className="text-muted-foreground"> {lp.player.team}</span>
                       </span>
-                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      <span className="font-mono text-xs text-muted-foreground tabular-nums">
                         {formatPts(lp.player.projection)}
                       </span>
                       <span className="w-10 text-right font-mono text-xs tabular-nums">
@@ -162,7 +184,11 @@ export function LineupStudio({
 
       <p className="text-faint flex items-center gap-1.5 text-[11px]">
         <Sparkles className="size-3" />
-        Weighted random search with QB stacks, salary cap, and local swaps. Not advice.
+        {contest === "milly"
+          ? "GPP build: stacks, bring-backs, and under-$4k darts. Not advice."
+          : contest === "small"
+            ? "Small-field build: floor first, spend the cap. Not advice."
+            : "Single-entry build: one core plus a leverage piece. Not advice."}
       </p>
     </section>
   );

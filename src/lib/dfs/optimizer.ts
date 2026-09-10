@@ -2,7 +2,27 @@ import { mulberry32 } from "@/lib/utils";
 import { ROSTER, SALARY_CAP, SLOT_LABEL } from "./constants";
 import type { Lineup, Player, Position, RosterSlot } from "./types";
 
+export type ContestStyle = "single" | "milly" | "small";
+
 const FLEX_POS = new Set<Position>(["RB", "WR", "TE"]);
+
+export const CONTEST_META: Record<
+  ContestStyle,
+  { label: string; blurb: string }
+> = {
+  single: {
+    label: "Single entry",
+    blurb: "One ticket in a big field. Balanced stars plus one leverage piece. Moderate QB stack.",
+  },
+  milly: {
+    label: "Milly Maker",
+    blurb: "Huge GPP. Ceiling, stacks, and unique darts. Fine to leave a little salary if the smash is real.",
+  },
+  small: {
+    label: "≤30 entries",
+    blurb: "Tiny field. Play the board: high floor, spend the cap, skip long-shot uniques.",
+  },
+};
 
 function weightedPick(items: Player[], weight: (p: Player) => number, rng: () => number): Player | null {
   if (items.length === 0) return null;
@@ -38,27 +58,39 @@ function remainingMin(
   return total;
 }
 
-function scoreChalk(p: Player, rng: () => number): number {
-  const matchup = p.oppRank >= 20 ? 1.12 : p.oppRank <= 8 ? 0.9 : 1;
-  const it = p.itFactor ? 1.12 : 1;
-  return p.projection ** 1.35 * matchup * it * (0.82 + rng() * 0.36);
-}
-
-function scoreValue(p: Player, rng: () => number): number {
-  const dart = p.cheapImpact ? 1.28 : 1;
-  return p.value ** 1.5 * Math.max(p.projection, 4) * dart * (0.75 + rng() * 0.5);
+function scorePlayer(style: ContestStyle, p: Player, rng: () => number, valueLean: boolean): number {
+  const matchup = p.oppRank >= 20 ? 1.12 : p.oppRank <= 8 ? 0.88 : 1;
+  const it = p.itFactor ? 1.14 : 1;
+  if (style === "small") {
+    const sal = p.salary >= 7000 ? 1.18 : p.salary < 4000 ? 0.78 : 1;
+    return p.projection ** 1.72 * matchup * it * sal * (0.92 + rng() * 0.14);
+  }
+  if (style === "milly") {
+    const ceil = p.itFactor ? 1.25 : 1;
+    const dart = p.cheapImpact ? 1.38 : 1;
+    const fadeChalk = p.salary >= 8500 ? 0.9 : 1;
+    const mix = valueLean ? p.value ** 1.45 * Math.max(p.projection, 5) : p.projection ** 1.18;
+    return mix * matchup * ceil * dart * fadeChalk * (0.5 + rng() * 0.95);
+  }
+  const dart = p.cheapImpact ? 1.16 : 1;
+  const core = valueLean ? p.value ** 1.28 * Math.max(p.projection, 5) * dart : p.projection ** 1.42 * it;
+  return core * matchup * (0.78 + rng() * 0.4);
 }
 
 export function generateLineups(
   players: Player[],
   count: number,
   seed: number,
-  opts?: { stackQb?: boolean; locks?: string[]; excludes?: string[] },
+  opts?: { stackQb?: boolean; locks?: string[]; excludes?: string[]; contest?: ContestStyle },
 ): Lineup[] {
   const stackQb = opts?.stackQb ?? true;
+  const contest = opts?.contest ?? "single";
   const lockIds = new Set(opts?.locks ?? []);
   const exclude = new Set(opts?.excludes ?? []);
   const rng = mulberry32(seed);
+
+  const qbFloor = contest === "small" ? 12 : contest === "milly" ? 7 : 8;
+  const skillFloor = contest === "small" ? 6.5 : contest === "milly" ? 4 : 4.5;
 
   const pool = players.filter((p) => {
     if (exclude.has(p.id)) return false;
@@ -66,7 +98,7 @@ export function generateLineups(
     if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /^(out|ir|doubtful)/i.test(p.injury ?? "")) {
       return lockIds.has(p.id);
     }
-    const floor = p.position === "DST" ? 3.5 : p.position === "QB" ? 8 : 4.5;
+    const floor = p.position === "DST" ? (contest === "small" ? 5 : 3.5) : p.position === "QB" ? qbFloor : skillFloor;
     if (p.position === "QB" && p.isStarter === false && !lockIds.has(p.id)) return false;
     return p.projection >= floor || lockIds.has(p.id);
   });
@@ -77,11 +109,12 @@ export function generateLineups(
   const results: Lineup[] = [];
   const seen = new Set<string>();
   let attempts = 0;
+  const valueRate = contest === "milly" ? 0.55 : contest === "small" ? 0.1 : 0.32;
 
-  while (results.length < count && attempts < count * 40) {
+  while (results.length < count && attempts < count * 48) {
     attempts++;
-    const valueLean = rng() < 0.42;
-    const built = buildOne(pool, locks, rng, { stackQb, valueLean });
+    const valueLean = rng() < valueRate;
+    const built = buildOne(pool, locks, rng, { stackQb, valueLean, contest });
     if (!built) continue;
     const key = built.players
       .map((lp) => lp.player.id)
@@ -100,11 +133,12 @@ function buildOne(
   pool: Player[],
   locks: Player[],
   rng: () => number,
-  opts: { stackQb: boolean; valueLean: boolean },
+  opts: { stackQb: boolean; valueLean: boolean; contest: ContestStyle },
 ): Lineup | null {
   const used = new Set<string>();
   const chosen: { slot: RosterSlot; player: Player }[] = [];
   let salary = 0;
+  const contest = opts.contest;
 
   const lockByPos: Partial<Record<Position, Player[]>> = {};
   for (const p of locks) {
@@ -112,10 +146,7 @@ function buildOne(
     (lockByPos[p.position] ??= []).push(p);
   }
 
-  const weight = opts.valueLean ? scoreValue : scoreChalk;
-
   const fillOrder = [...ROSTER];
-  // Fill DST later so we spend on skill first, QB first for stacking.
   fillOrder.sort((a, b) => {
     const rank = (s: RosterSlot) =>
       s === "QB" ? 0 : s === "TE" ? 1 : s.startsWith("WR") ? 2 : s.startsWith("RB") ? 3 : s === "FLEX" ? 4 : 5;
@@ -123,6 +154,8 @@ function buildOne(
   });
 
   let qb: Player | null = null;
+  const stackWr = contest === "milly" ? 0.86 : contest === "small" ? 0.42 : 0.7;
+  const stackFlex = contest === "milly" ? 0.48 : contest === "small" ? 0.12 : 0.32;
 
   for (let i = 0; i < fillOrder.length; i++) {
     const slot = fillOrder[i]!;
@@ -150,18 +183,21 @@ function buildOne(
       });
 
       if (slot.slot === "QB" && candidates.length) {
-        // Prefer startable QBs
-        candidates = candidates.filter((p) => p.salary >= 4500 || p.projection >= 12) || candidates;
+        const starters = candidates.filter((p) => p.salary >= 4500 || p.projection >= 12);
+        if (starters.length) candidates = starters;
       }
 
       if (opts.stackQb && qb && (slot.slot.startsWith("WR") || slot.slot === "TE" || slot.slot === "FLEX")) {
         const stack = candidates.filter((p) => p.team === qb!.team && p.position !== "RB");
-        if (stack.length && rng() < (slot.slot === "FLEX" ? 0.35 : 0.72)) {
-          candidates = stack;
+        const rate = slot.slot === "FLEX" ? stackFlex : stackWr;
+        if (stack.length && rng() < rate) candidates = stack;
+        else if (contest === "milly" && qb && rng() < 0.22) {
+          const bringBack = candidates.filter((p) => p.opponent === qb!.team && p.position !== "QB");
+          if (bringBack.length) candidates = bringBack;
         }
       }
 
-      pick = weightedPick(candidates, (p) => weight(p, rng), rng);
+      pick = weightedPick(candidates, (p) => scorePlayer(contest, p, rng, opts.valueLean), rng);
     }
 
     if (!pick) return null;
@@ -174,8 +210,8 @@ function buildOne(
   if (salary > SALARY_CAP) return null;
   if (chosen.length !== 9) return null;
 
-  // Local improvement: swap same-slot players if projection rises and salary fits.
-  for (let k = 0; k < 18; k++) {
+  const swaps = contest === "small" ? 28 : contest === "milly" ? 14 : 18;
+  for (let k = 0; k < swaps; k++) {
     const idx = Math.floor(rng() * chosen.length);
     const cur = chosen[idx]!;
     const spec = ROSTER.find((r) => r.slot === cur.slot)!;
@@ -184,10 +220,18 @@ function buildOne(
       if (!spec.positions.includes(p.position)) return false;
       const newSalary = salary - cur.player.salary + p.salary;
       if (newSalary > SALARY_CAP) return false;
+      if (contest === "small") return p.projection > cur.player.projection + 0.25;
+      if (contest === "milly") {
+        return (
+          p.projection > cur.player.projection + 0.6 ||
+          (opts.valueLean && p.value > cur.player.value + 0.2) ||
+          (p.itFactor && !cur.player.itFactor)
+        );
+      }
       return p.projection > cur.player.projection + 0.4 || (opts.valueLean && p.value > cur.player.value + 0.15);
     });
     if (!alt.length) continue;
-    const next = weightedPick(alt, (p) => p.projection * p.value, rng);
+    const next = weightedPick(alt, (p) => p.projection * (contest === "small" ? 1 : p.value), rng);
     if (!next || next.id === cur.player.id) continue;
     used.delete(cur.player.id);
     used.add(next.id);
@@ -206,6 +250,8 @@ function buildOne(
       (c) => c.player.team === qbPlayer.team && c.player.id !== qbPlayer.id && FLEX_POS.has(c.player.position),
     );
     if (mates.length) stacks.push(`${qbPlayer.team} ${1 + mates.length}x`);
+    const opp = ordered.filter((c) => c.player.opponent === qbPlayer.team && c.player.id !== qbPlayer.id);
+    if (contest === "milly" && opp.length) stacks.push(`bring-back ${opp[0]!.player.team}`);
   }
 
   return {
