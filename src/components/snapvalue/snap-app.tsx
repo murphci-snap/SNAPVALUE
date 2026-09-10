@@ -7,12 +7,14 @@ import { kickoffLabel, relativeTime } from "@/lib/dfs/format-ui";
 import type { SlateData, SlateResponse } from "@/lib/dfs/types";
 import { cn } from "@/lib/utils";
 import { BetDesk } from "./bet-desk";
+import { DisclaimerFooter, DisclaimerGate, readDisclaimerAccepted, writeDisclaimerAccepted } from "./disclaimer-gate";
 import { DvpBoard } from "./dvp-board";
 import { LineupStudio } from "./lineup-studio";
 import { PlayerBoard } from "./player-board";
 import { PoolStudio } from "./pool-studio";
+import { PprBoard } from "./ppr-board";
 
-type Tab = "board" | "lineups" | "pools" | "bets";
+type Tab = "board" | "lineups" | "pools" | "bets" | "ppr";
 
 async function fetchSlate(draftGroupId?: number, force = false): Promise<SlateResponse> {
   const params = new URLSearchParams();
@@ -37,6 +39,13 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   const [locks, setLocks] = useState<string[]>([]);
   const [excludes, setExcludes] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [gateReady, setGateReady] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+
+  useEffect(() => {
+    setAccepted(readDisclaimerAccepted());
+    setGateReady(true);
+  }, []);
 
   const query = useQuery({
     queryKey: ["slate", draftGroupId ?? "auto"],
@@ -69,6 +78,18 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     }
   }
 
+  if (!gateReady) return <BootScreen />;
+  if (!accepted) {
+    return (
+      <DisclaimerGate
+        onAccept={() => {
+          writeDisclaimerAccepted();
+          setAccepted(true);
+        }}
+      />
+    );
+  }
+
   if (query.isLoading && !data) return <BootScreen />;
   if (!data || !data.ok) {
     return (
@@ -86,7 +107,14 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
 
   return (
     <div className="hash-bg min-h-dvh">
-      <Header data={data} onSlate={setDraftGroupId} onRefresh={() => void refresh()} refreshing={refreshing || query.isFetching} />
+      <Header
+        data={data}
+        tab={tab}
+        onSlate={setDraftGroupId}
+        onRefresh={() => void refresh()}
+        onPpr={() => setTab(tab === "ppr" ? "board" : "ppr")}
+        refreshing={refreshing || query.isFetching}
+      />
       <MatchupStrip games={data.games} />
       <div className="mx-auto max-w-[1440px] px-4 pb-16 lg:px-6">
         <StatsBar data={data} />
@@ -136,21 +164,27 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
           )}
           {tab === "pools" && <PoolStudio games={data.games} />}
           {tab === "bets" && <BetDesk games={data.games} players={data.players} />}
+          {tab === "ppr" && <PprBoard data={data} />}
         </div>
       </div>
+      <DisclaimerFooter />
     </div>
   );
 }
 
 function Header({
   data,
+  tab,
   onSlate,
   onRefresh,
+  onPpr,
   refreshing,
 }: {
   data: SlateData;
+  tab: Tab;
   onSlate: (id: number) => void;
   onRefresh: () => void;
+  onPpr: () => void;
   refreshing: boolean;
 }) {
   const [now, setNow] = useState(() => Date.parse(data.fetchedAt) || 0);
@@ -173,6 +207,9 @@ function Header({
           Updated {relativeTime(data.fetchedAt, now)} · auto {relativeTime(data.nextRefreshAt, now)}
         </p>
         <div className="ml-auto flex items-center gap-2">
+          <Button variant={tab === "ppr" ? "default" : "secondary"} size="sm" onClick={onPpr}>
+            Weekly PPR
+          </Button>
           <Button variant="secondary" size="sm" onClick={onRefresh} disabled={refreshing}>
             <RefreshCw className={cn(refreshing && "animate-spin")} />
             <span className="hidden sm:inline">Refresh</span>
