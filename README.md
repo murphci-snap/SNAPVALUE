@@ -1,12 +1,17 @@
 # SNAPVALUE
 
-Weekly DraftKings Classic DFS football research.
+Weekly DraftKings Classic DFS football research, plus survivor / loser pool tickets and a weekly betting desk.
 
-Vegas / FanDuel player props, consensus rankings, IT Factor smash spots, pts/$ value, and random optimum $50k Classic lineups.
-<<<<<<< HEAD
-=======
+Vegas / FanDuel player props, consensus rankings, IT Factor smash spots, pts/$ value, random optimum $50k Classic lineups, multi-entry survivor and loser strategies, three best bets, a spread lock, and a two-player anytime TD.
 
-**Stack:** QB + 2 RB + 3 WR + TE + FLEX + DST · $50,000 salary cap.
+**DFS stack:** QB + 2 RB + 3 WR + TE + FLEX + DST · $50,000 salary cap.
+
+## What is in the app
+
+- **Players** — slate by position, matchup, projections, value
+- **Lineups** — random optimum Classic lineups
+- **Pools** — survivor and loser pool, 1–10 tickets, used-team tracking
+- **Bets** — 3 best bets, ATS lock, 2-leg anytime TD from live books + Grok
 
 ## Live data
 
@@ -37,4 +42,3 @@ npm run dev
 ```
 
 Opens on port 8080.
->>>>>>> bd1045c (Add SNAPVALUE app for Vercel deploy)
