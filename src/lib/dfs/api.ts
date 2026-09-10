@@ -3,6 +3,7 @@ import { normalizeName } from "@/lib/utils";
 import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP } from "./constants";
 import { getJson, settled } from "./http";
 import { markItFactor } from "./it-factor";
+import { markCheapImpact } from "./sleeper";
 import { applyGameLines, loadProps, lookupProps } from "./props";
 import { loadFantasyPros, loadSleeper, lookupSite } from "./projections";
 import { dkFromProps, dkFromWeek, emptyWeek, fillWeek, matchupMultiplier, mean, round1, round2, seasonFromEspn, weekFromEspn } from "./scoring";
@@ -20,7 +21,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 4;
+const CACHE_VER = 5;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -503,6 +504,8 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         itFactorScore: 0,
         itFactorWhy: null,
         anytimeTd: props?.line.anytimeTd ?? null,
+        cheapImpact: false,
+        cheapImpactWhy: null,
       });
     }
 
@@ -545,11 +548,12 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     }
 
     markItFactor(players, games);
+    markCheapImpact(players, games);
     players.sort((a, b) => b.projection - a.projection || b.salary - a.salary);
 
     const trimmed = players.filter((p) => {
       if (p.position === "DST") return true;
-      if (p.isValuePlay || p.itFactor) return true;
+      if (p.isValuePlay || p.itFactor || p.cheapImpact) return true;
       if (p.salary >= 4500) return true;
       if (p.projection >= 6) return true;
       if (p.fppg >= 8) return true;

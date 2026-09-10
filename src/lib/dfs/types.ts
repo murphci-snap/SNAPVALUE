@@ -139,6 +139,8 @@ export interface Player {
   itFactorScore: number;
   itFactorWhy: string | null;
   anytimeTd: number | null;
+  cheapImpact: boolean;
+  cheapImpactWhy: string | null;
 }
 
 export interface SlateOption {

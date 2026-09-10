@@ -8,6 +8,7 @@ import { POSITIONS } from "@/lib/dfs/constants";
 import { kickoffLabel, matchupLabel, matchupTone, propLineItems, rankingLabel, seasonLine, weekLine } from "@/lib/dfs/format-ui";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary } from "@/lib/utils";
+import { CheapImpactRack } from "./cheap-impact-rack";
 import { ItFactorRack } from "./it-factor-rack";
 
 type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name";
@@ -131,6 +132,7 @@ export function PlayerBoard({
       </div>
 
       <ItFactorRack data={data} pos={pos} onSelect={setSelected} />
+      <CheapImpactRack data={data} pos={pos} onSelect={setSelected} />
 
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -234,6 +236,7 @@ export function PlayerBoard({
                           <div className="flex items-center gap-1.5">
                             <span className="truncate font-medium">{p.name}</span>
                             {p.itFactor && <Badge variant="it">IT</Badge>}
+                            {p.cheapImpact && <Badge variant="value">$4k</Badge>}
                             {p.isValuePlay && <Badge variant="value">Value</Badge>}
                             {p.rankingMethod === "props" && <Badge variant="hot">Vegas</Badge>}
                             {p.injury && <Badge variant="warn">{p.injury}</Badge>}
@@ -418,6 +421,12 @@ function PlayerDetail({
           <p className="text-ink mt-4 text-sm">
             <span className="display tracking-[0.14em] uppercase">IT Factor · </span>
             {player.itFactorWhy}
+          </p>
+        )}
+        {player.cheapImpact && player.cheapImpactWhy && (
+          <p className="text-value mt-3 text-sm">
+            <span className="display tracking-[0.14em] uppercase">Under $4k · </span>
+            {player.cheapImpactWhy}
           </p>
         )}
 

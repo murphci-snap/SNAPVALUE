@@ -45,7 +45,8 @@ function scoreChalk(p: Player, rng: () => number): number {
 }
 
 function scoreValue(p: Player, rng: () => number): number {
-  return p.value ** 1.5 * Math.max(p.projection, 4) * (0.75 + rng() * 0.5);
+  const dart = p.cheapImpact ? 1.28 : 1;
+  return p.value ** 1.5 * Math.max(p.projection, 4) * dart * (0.75 + rng() * 0.5);
 }
 
 export function generateLineups(
