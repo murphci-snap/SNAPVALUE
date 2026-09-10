@@ -44,6 +44,7 @@ export interface WeeklyDesk {
   bestBets: DeskBet[];
   spreadLock: DeskBet | null;
   atdParlay: TdParlay | null;
+  lottoTicket: TdParlay | null;
   sources: string[];
 }
 
@@ -246,10 +247,59 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     }
   }
 
+  const lottoPool = players
+    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
+    .map((p) => {
+      const raw = atdProb(p);
+      const match = p.oppQuality === "High" ? 1.1 : p.oppQuality === "Low" ? 0.9 : 1;
+      const prob = Math.min(0.55, raw * match);
+      return { p, prob, american: probToAmerican(prob) };
+    })
+    .filter((x) => x.prob >= 0.14 && x.prob <= 0.42)
+    .sort((a, b) => {
+      const score = (x: typeof a) =>
+        (0.3 - Math.abs(x.prob - 0.26)) * 4 +
+        (x.p.itFactor ? 0.35 : 0) +
+        (x.p.cheapImpact ? 0.2 : 0) +
+        (x.p.oppRank >= 22 ? 0.2 : 0);
+      return score(b) - score(a);
+    });
+
+  const lottoPicked: typeof lottoPool = [];
+  const usedGames = new Set<string>();
+  const usedTeams = new Set<string>();
+  for (const row of lottoPool) {
+    if (lottoPicked.length >= 5) break;
+    if (usedGames.has(row.p.gameName) || usedTeams.has(row.p.team)) continue;
+    usedGames.add(row.p.gameName);
+    usedTeams.add(row.p.team);
+    lottoPicked.push(row);
+  }
+
+  let lottoTicket: TdParlay | null = null;
+  if (lottoPicked.length === 5) {
+    const combined = parlayProb(lottoPicked.map((x) => x.prob));
+    lottoTicket = {
+      legs: lottoPicked.map((x) => ({
+        name: x.p.name,
+        team: x.p.team,
+        opponent: x.p.opponent,
+        american: x.american,
+        prob: x.prob,
+        why: `${x.p.position} · ${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}${x.p.itFactor ? " · IT Factor" : ""}`,
+      })),
+      combinedAmerican: probToAmerican(combined),
+      combinedProb: combined,
+      why: "Five independent games. Long-shot ATD parlay — one miss kills it. Fun only, tiny unit.",
+      tape: "Lotto construction: mid-price ATD names, no same-game stack, mix of smash spots and streamer darts from the public X tape.",
+    };
+  }
+
   return {
     bestBets: bestBets.slice(0, 3).map((b, i) => ({ ...b, confidence: clampConf(b.confidence, i) })),
     spreadLock,
     atdParlay,
+    lottoTicket,
     sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "Grok model", "Public tape + X cappers"],
   };
 }

@@ -199,14 +199,16 @@ function Header({
         <img
           src="/command-center.jpg"
           alt=""
-          className="h-40 w-full object-cover object-center sm:h-52 lg:h-60"
+          className="h-36 w-full object-cover object-[center_85%] sm:h-44 lg:h-52"
         />
-        <div className="from-background absolute inset-0 bg-gradient-to-t via-background/55 to-background/20" />
+        <div className="from-background absolute inset-0 bg-gradient-to-t via-background/80 to-background/40" />
         <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[1440px] px-4 pb-4 lg:px-6">
-          <h1 className="display text-5xl leading-none font-semibold tracking-wide sm:text-6xl">SNAPVALUE</h1>
-          <p className="display text-ink mt-2 text-2xl leading-none font-semibold tracking-wide sm:text-3xl">
-            DFS Command Center
-          </p>
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h1 className="display text-4xl leading-none font-semibold tracking-wide sm:text-5xl">SNAPVALUE</h1>
+            <p className="display text-2xl leading-none font-semibold tracking-wide text-ink sm:text-3xl">
+              DFS Command Center
+            </p>
+          </div>
           <p className="text-muted-foreground mt-2 max-w-xl text-sm sm:text-base">
             Read the tape. Spend the cap. Smash the slate.
           </p>
