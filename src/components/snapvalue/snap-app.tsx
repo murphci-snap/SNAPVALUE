@@ -6,11 +6,13 @@ import { REFRESH_MS } from "@/lib/dfs/constants";
 import { kickoffLabel, relativeTime } from "@/lib/dfs/format-ui";
 import type { SlateData, SlateResponse } from "@/lib/dfs/types";
 import { cn } from "@/lib/utils";
+import { BetDesk } from "./bet-desk";
 import { DvpBoard } from "./dvp-board";
 import { LineupStudio } from "./lineup-studio";
 import { PlayerBoard } from "./player-board";
+import { PoolStudio } from "./pool-studio";
 
-type Tab = "board" | "lineups";
+type Tab = "board" | "lineups" | "pools" | "bets";
 
 async function fetchSlate(draftGroupId?: number, force = false): Promise<SlateResponse> {
   const params = new URLSearchParams();
@@ -88,11 +90,13 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
       <MatchupStrip games={data.games} />
       <div className="mx-auto max-w-[1440px] px-4 pb-16 lg:px-6">
         <StatsBar data={data} />
-        <div className="mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)] lg:hidden">
+        <div className="mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
           {(
             [
               ["board", "Players"],
               ["lineups", "Lineups"],
+              ["pools", "Pools"],
+              ["bets", "Bets"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -110,24 +114,28 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         </div>
 
         <div className="mt-5">
-          <div className={cn(tab === "lineups" && "max-lg:hidden")}>
-            <PlayerBoard
-              data={data}
-              locks={locks}
-              excludes={excludes}
-              onToggleLock={toggleLock}
-              onToggleExclude={toggleExclude}
-            />
-            <DvpBoard data={data} />
-          </div>
-          <div className={cn("mt-8", tab === "board" && "max-lg:hidden")} id="lineups">
+          {tab === "board" && (
+            <>
+              <PlayerBoard
+                data={data}
+                locks={locks}
+                excludes={excludes}
+                onToggleLock={toggleLock}
+                onToggleExclude={toggleExclude}
+              />
+              <DvpBoard data={data} />
+            </>
+          )}
+          {tab === "lineups" && (
             <LineupStudio
               players={data.players}
               locks={locks}
               excludes={excludes}
               onToggleLock={toggleLock}
             />
-          </div>
+          )}
+          {tab === "pools" && <PoolStudio games={data.games} />}
+          {tab === "bets" && <BetDesk games={data.games} players={data.players} />}
         </div>
       </div>
     </div>
@@ -155,7 +163,7 @@ function Header({
     <header className="border-border/80 sticky top-0 z-30 border-b bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-4 py-3 lg:px-6">
         <div className="min-w-0 shrink-0">
-          <p className="display hidden text-[11px] tracking-[0.22em] text-faint uppercase sm:block">Weekly DFS</p>
+          <p className="display hidden text-[11px] tracking-[0.22em] text-faint uppercase sm:block">DFS · Pools · Bets</p>
           <h1 className="display text-2xl leading-none font-semibold tracking-wide sm:text-3xl">SNAPVALUE</h1>
         </div>
         <span className="bg-secondary text-muted-foreground rounded-full px-3 py-1 font-mono text-xs">
@@ -165,12 +173,6 @@ function Header({
           Updated {relativeTime(data.fetchedAt, now)} · auto {relativeTime(data.nextRefreshAt, now)}
         </p>
         <div className="ml-auto flex items-center gap-2">
-          <a
-            href="#lineups"
-            className="text-muted-foreground hover:text-foreground hidden h-10 items-center rounded-full px-3 text-xs font-medium lg:inline-flex"
-          >
-            Lineup lab
-          </a>
           <Button variant="secondary" size="sm" onClick={onRefresh} disabled={refreshing}>
             <RefreshCw className={cn(refreshing && "animate-spin")} />
             <span className="hidden sm:inline">Refresh</span>

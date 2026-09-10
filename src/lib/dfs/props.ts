@@ -283,6 +283,45 @@ function parseFanDuelGames(data: unknown, games: GameLine[]) {
   }
 }
 
+function parseEspnScoreboard(raw: unknown, games: GameLine[]) {
+  const data = raw as {
+    events?: {
+      competitions?: {
+        competitors?: { homeAway?: string; team?: { abbreviation?: string } }[];
+        odds?: { details?: string; overUnder?: number; spread?: number }[];
+      }[];
+    }[];
+  };
+  for (const ev of data.events ?? []) {
+    const c = ev.competitions?.[0];
+    if (!c) continue;
+    const home = canonTeam(c.competitors?.find((t) => t.homeAway === "home")?.team?.abbreviation);
+    const away = canonTeam(c.competitors?.find((t) => t.homeAway === "away")?.team?.abbreviation);
+    if (!home || !away) continue;
+    const odds = c.odds?.[0];
+    let spread: number | null = null;
+    let total: number | null = Number.isFinite(odds?.overUnder) ? Number(odds?.overUnder) : null;
+    const details = odds?.details ?? "";
+    const m = details.match(/([A-Z]{2,3})\s+([+-]?\d+(?:\.\d+)?)/);
+    if (m?.[1] && m[2]) {
+      const fav = canonTeam(m[1]);
+      const line = Number(m[2]);
+      if (Number.isFinite(line)) spread = fav === home ? -Math.abs(line) : Math.abs(line);
+    } else if (Number.isFinite(odds?.spread)) {
+      spread = -Math.abs(Number(odds?.spread));
+    }
+    if (spread == null && total == null) continue;
+    const existing = games.find((x) => x.homeAbbr === home && x.awayAbbr === away);
+    if (existing) {
+      if (total != null) existing.total = existing.total == null ? total : (existing.total + total) / 2;
+      if (spread != null) existing.spread = existing.spread == null ? spread : (existing.spread + spread) / 2;
+      if (!existing.books.includes("ESPN")) existing.books.push("ESPN");
+    } else {
+      games.push({ homeAbbr: home, awayAbbr: away, total, spread, books: ["ESPN"] });
+    }
+  }
+}
+
 export type EspnPropIndex = Map<string, PlayerProps>;
 
 function mergePropRows(a: PlayerProps, b: PlayerProps): PlayerProps {
@@ -319,7 +358,7 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
   // Vegas (Bovada) carries weekly player props. FanDuel's public NFL page is game
   // totals/spreads — season-long player props are ignored. ESPN DK propBets are
   // paginated (30+ pages/game) and blow the slate budget; skip them.
-  const [bovada, fd] = await Promise.all([
+  const [bovada, fd, espnSb] = await Promise.all([
     settled(getJson<unknown>("https://www.bovada.lv/services/sports/event/coupon/events/A/description/football/nfl?lang=en", undefined, 28000)),
     settled(
       getJson<unknown>(
@@ -328,6 +367,7 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
         14000,
       ),
     ),
+    settled(getJson<unknown>("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard", undefined, 8000)),
   ]);
 
   if (bovada) {
@@ -340,6 +380,13 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
   if (fd) {
     try {
       parseFanDuelGames(fd, games);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (espnSb) {
+    try {
+      parseEspnScoreboard(espnSb, games);
     } catch {
       /* ignore */
     }

@@ -20,7 +20,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 3;
+const CACHE_VER = 4;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {

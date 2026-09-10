@@ -71,6 +71,10 @@ export const ESPN_TEAMS: Record<number, { abbr: string; nick: string }> = {
   34: { abbr: "HOU", nick: "Texans" },
 };
 
+export const NFL_ABBR: string[] = Object.values(ESPN_TEAMS)
+  .map((t) => t.abbr)
+  .sort();
+
 /** ESPN fantasy stat ids */
 export const S = {
   passCmp: 0,
