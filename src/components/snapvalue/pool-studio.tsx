@@ -171,6 +171,12 @@ function PoolBlock({
 export function PoolStudio({ games }: { games: Game[] }) {
   return (
     <div className="flex flex-col gap-12">
+      <header>
+        <h2 className="display text-2xl leading-none font-semibold">Survivor / Loser</h2>
+        <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
+          Two contests, same week. Survivor: pick a winner. Loser: pick a team to lose. Multiple tickets stay unique.
+        </p>
+      </header>
       <PoolBlock
         kind="survivor"
         title="Survivor"

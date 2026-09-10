@@ -123,7 +123,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
             [
               ["board", "Players"],
               ["lineups", "Lineups"],
-              ["pools", "Pools"],
+              ["pools", "Survivor / Loser"],
               ["bets", "Bets"],
             ] as const
           ).map(([id, label]) => (
@@ -132,7 +132,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
               type="button"
               onClick={() => setTab(id)}
               className={cn(
-                "h-11 flex-1 rounded-md text-sm font-medium transition-colors duration-150",
+                "h-11 flex-1 rounded-md px-1 text-center text-xs font-medium leading-tight transition-colors duration-150 sm:text-sm",
                 tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground",
               )}
             >
