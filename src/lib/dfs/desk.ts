@@ -8,7 +8,7 @@ import {
 import { americanToProb } from "./scoring";
 import type { Game, Player } from "./types";
 
-export type BetMarket = "spread" | "total" | "moneyline";
+export type BetMarket = "spread" | "total" | "moneyline" | "prop";
 
 export interface DeskBet {
   id: string;
@@ -43,6 +43,7 @@ export interface TdParlay {
 export interface WeeklyDesk {
   bestBets: DeskBet[];
   spreadLock: DeskBet | null;
+  playerProps: DeskBet[];
   atdParlay: TdParlay | null;
   lottoTicket: TdParlay | null;
   sources: string[];
@@ -120,13 +121,107 @@ function scoreTotal(game: Game, players: Player[]): { pick: "over" | "under"; ed
   const td = impliedTdShare(players, game.homeAbbr) + impliedTdShare(players, game.awayAbbr);
   const expected = 38 + td * 14 + (game.isDome ? 1.4 : 0);
   const gap = expected - game.total;
-  if (Math.abs(gap) < 1.4) return null;
   const pick = gap > 0 ? "over" : "under";
+  if (Math.abs(gap) < (pick === "under" ? 0.6 : 1.2)) return null;
   const why =
     pick === "over"
       ? `Player TD prices + ${game.isDome ? "dome" : "this matchup"} imply closer to ${expected.toFixed(1)} than the posted ${game.total}.`
       : `Posted ${game.total} is fat versus a TD market that looks closer to ${expected.toFixed(1)}.`;
   return { pick, edge: Math.min(0.12, Math.abs(gap) / 40), why };
+}
+
+function gameOf(p: Player, games: Game[]): Game | undefined {
+  return games.find((g) => g.homeAbbr === p.team || g.awayAbbr === p.team);
+}
+
+function yardModel(p: Player, line: number, kind: "pass" | "rush" | "rec", games: Game[]): number {
+  const w = p.week;
+  let model =
+    kind === "pass" ? (w?.passYds ?? 0) : kind === "rush" ? (w?.rushYds ?? 0) : (w?.recYds ?? 0);
+  if (model < 8) model = line;
+  if (p.oppRank >= 24) model *= 1.07;
+  else if (p.oppRank >= 20) model *= 1.03;
+  else if (p.oppRank <= 8) model *= 0.93;
+  const g = gameOf(p, games);
+  if (g?.total != null) {
+    if (g.total >= 49) model *= 1.04;
+    else if (g.total <= 41) model *= 0.95;
+  }
+  const imp = g ? (p.home ? g.homeImplied : g.awayImplied) : null;
+  if (imp != null && imp >= 27 && kind !== "rush") model *= 1.03;
+  if (imp != null && imp <= 17) model *= 0.95;
+  if (p.itFactor && kind !== "rush") model *= 1.02;
+  return model;
+}
+
+function propCard(
+  p: Player,
+  line: number,
+  kind: "pass" | "rush" | "rec",
+  games: Game[],
+): DeskBet | null {
+  if (line < 12) return null;
+  const model = yardModel(p, line, kind, games);
+  const gap = model - line;
+  if (Math.abs(gap) < line * 0.025 && Math.abs(gap) < 6) return null;
+  const over = gap > 0;
+  const label = kind === "pass" ? "pass yds" : kind === "rush" ? "rush yds" : "rec yds";
+  const g = gameOf(p, games);
+  const books = p.props?.books?.length ? p.props.books.join(" · ") : "Vegas / DK";
+  return {
+    id: `prop-${kind}-${p.id}`,
+    title: `${over ? "Over" : "Under"} ${line.toFixed(1)}`,
+    market: "prop",
+    pick: `${p.name} ${over ? "o" : "u"}${line.toFixed(1)} ${label}`,
+    line: `${p.position} · ${p.team} ${p.home ? "vs" : "@"} ${p.opponent}${g?.total != null ? ` · O/U ${g.total}` : ""}`,
+    edge: Math.min(0.14, Math.abs(gap) / Math.max(40, line)),
+    confidence: Math.round(54 + Math.min(14, Math.abs(gap) / 3)),
+    why: `Posted ${line.toFixed(1)} ${label}. Model sits near ${model.toFixed(0)} after matchup and total. ${over ? "Need volume in a viable script." : "Script + defense cap the number."}`,
+    books,
+    tape: over
+      ? "Public leans overs on star skill. Only take it with a real number gap."
+      : "Unders are the quieter side on player yards. Street often still hammers the over.",
+  };
+}
+
+function bestProp(
+  players: Player[],
+  games: Game[],
+  pos: Player["position"],
+  kind: "pass" | "rush" | "rec",
+  getter: (p: Player) => number | undefined,
+): DeskBet | null {
+  const rows: DeskBet[] = [];
+  for (const p of players) {
+    if (p.position !== pos) continue;
+    if (p.isStarter === false) continue;
+    if (/out|ir|doubtful|suspended/i.test(p.injury ?? "") || /^(out|ir|doubtful)/i.test(p.status)) continue;
+    const line = getter(p);
+    if (line == null || line <= 0) continue;
+    const card = propCard(p, line, kind, games);
+    if (card) rows.push(card);
+  }
+  rows.sort((a, b) => b.edge - a.edge);
+  if (rows[0]) return rows[0];
+  const fallback = players
+    .filter((p) => p.position === pos && p.isStarter !== false)
+    .map((p) => ({ p, line: getter(p) ?? 0 }))
+    .filter((x) => x.line >= 12)
+    .sort((a, b) => b.line - a.line)[0];
+  if (!fallback) return null;
+  const over = fallback.p.oppRank >= 20;
+  return propCard(fallback.p, fallback.line * (over ? 0.97 : 1.03), kind, games) ?? {
+    id: `prop-${kind}-${fallback.p.id}`,
+    title: `${over ? "Over" : "Under"} ${fallback.line.toFixed(1)}`,
+    market: "prop",
+    pick: `${fallback.p.name} ${over ? "o" : "u"}${fallback.line.toFixed(1)} ${kind === "pass" ? "pass yds" : kind === "rush" ? "rush yds" : "rec yds"}`,
+    line: `${fallback.p.position} · ${fallback.p.team} ${fallback.p.home ? "vs" : "@"} ${fallback.p.opponent}`,
+    edge: 0.04,
+    confidence: 55,
+    why: `Matchup lean on the posted ${fallback.line.toFixed(1)} yard number.`,
+    books: fallback.p.props?.books?.join(" · ") || "Vegas / DK",
+    tape: over ? "Smash spot vs a soft yardage D." : "Tough D / low script — take the under.",
+  };
 }
 
 function atdProb(p: Player): number {
@@ -186,14 +281,50 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   ats.sort((a, b) => b.edge - a.edge);
   totals.sort((a, b) => b.edge - a.edge);
 
+  let unders = totals.filter((t) => /^under/i.test(t.pick));
+  const overs = totals.filter((t) => /^over/i.test(t.pick));
+  if (!unders.length) {
+    let best: DeskBet | null = null;
+    let bestGap = Number.POSITIVE_INFINITY;
+    for (const g of live) {
+      if (g.total == null) continue;
+      const td = impliedTdShare(players, g.homeAbbr) + impliedTdShare(players, g.awayAbbr);
+      const expected = 38 + td * 14 + (g.isDome ? 1.4 : 0);
+      const gap = expected - g.total;
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = {
+          id: `ou-under-${g.id}`,
+          title: `Under ${g.total}`,
+          market: "total",
+          pick: `under ${g.total}`,
+          line: `${g.awayAbbr} @ ${g.homeAbbr}`,
+          edge: Math.min(0.1, Math.abs(gap) / 40 + 0.03),
+          confidence: 56,
+          why: `Quietest total on the board. Model closer to ${expected.toFixed(1)} than the posted ${g.total}.`,
+          books: booksFor(g),
+          tape: "Unders are the sharper street lean most weeks. Public still lives on the over.",
+        };
+      }
+    }
+    if (best) unders = [best];
+  }
   const spreadLock = ats[0] ?? null;
   const bestBets: DeskBet[] = [];
   if (spreadLock) bestBets.push(spreadLock);
-  if (totals[0]) bestBets.push(totals[0]);
-  const secondAts = ats[1];
-  if (secondAts && bestBets.length < 3) bestBets.push(secondAts);
-  if (totals[1] && bestBets.length < 3) bestBets.push(totals[1]);
+  if (unders[0]) bestBets.push(unders[0]);
+  if (overs[0] && bestBets.length < 3) bestBets.push(overs[0]);
+  if (ats[1] && bestBets.length < 3) bestBets.push(ats[1]);
+  if (unders[1] && bestBets.length < 3) bestBets.push(unders[1]);
   if (ats[2] && bestBets.length < 3) bestBets.push(ats[2]);
+
+  const playerProps = [
+    bestProp(players, games, "QB", "pass", (p) => p.props?.passYds),
+    bestProp(players, games, "RB", "rush", (p) => p.props?.rushYds),
+    bestProp(players, games, "RB", "rec", (p) => p.props?.recYds),
+    bestProp(players, games, "WR", "rec", (p) => p.props?.recYds),
+    bestProp(players, games, "TE", "rec", (p) => p.props?.recYds),
+  ].filter((x): x is DeskBet => !!x);
 
   const kickoffOk = (iso: string) => {
     const t = Date.parse(iso);
@@ -298,6 +429,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   return {
     bestBets: bestBets.slice(0, 3).map((b, i) => ({ ...b, confidence: clampConf(b.confidence, i) })),
     spreadLock,
+    playerProps,
     atdParlay,
     lottoTicket,
     sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "Grok model", "Public tape + X cappers"],

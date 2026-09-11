@@ -14,8 +14,8 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
           <p className="text-faint text-[11px] tracking-wide uppercase">{desk.sources.join(" · ")}</p>
         </div>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Grok prices the board against Vegas/FanDuel numbers, then checks public tape and X ATD chatter. These are
-          sides and totals — not DFS.
+          Grok prices the board against Vegas/FanDuel numbers, then checks public tape. One of the three is always an
+          under when a total is posted.
         </p>
         {desk.bestBets.length === 0 ? (
           <p className="text-muted-foreground text-sm">Waiting on this week’s spreads and totals.</p>
@@ -33,6 +33,40 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
                 <p className="text-faint mt-3 font-mono text-[11px]">
                   {bet.books} · confidence {bet.confidence}
                 </p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <section>
+        <h2 className="display text-2xl font-semibold">Player props</h2>
+        <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
+          One over/under each: QB passing yards, RB rushing, RB receiving, WR receiving, TE receiving. Posted Vegas/DK
+          lines versus Grok + matchup.
+        </p>
+        {desk.playerProps.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Waiting on yardage props for this slate.</p>
+        ) : (
+          <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {desk.playerProps.map((bet) => (
+              <li key={bet.id} className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+                <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
+                  {bet.pick.includes("pass")
+                    ? "QB pass"
+                    : bet.pick.includes("rush")
+                      ? "RB rush"
+                      : bet.line.startsWith("RB")
+                        ? "RB rec"
+                        : bet.line.startsWith("WR")
+                          ? "WR rec"
+                          : "TE rec"}
+                </p>
+                <h3 className="display mt-1 text-xl leading-none font-semibold">{bet.pick}</h3>
+                <p className="text-muted-foreground mt-1 text-[12px]">{bet.line}</p>
+                <p className="mt-3 text-sm leading-snug">{bet.why}</p>
+                <p className="text-ink mt-2 text-[12px] leading-snug">{bet.tape}</p>
+                <p className="text-faint mt-3 font-mono text-[11px]">{bet.books}</p>
               </li>
             ))}
           </ol>
