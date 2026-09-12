@@ -21,7 +21,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 7;
+const CACHE_VER = 8;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -207,6 +207,7 @@ const EMPTY_PROPS: Awaited<ReturnType<typeof loadProps>> = {
   vegasPlayers: 0,
   dkPlayers: 0,
   fdGames: 0,
+  fdPlayers: 0,
   byEspnId: new Map(),
 };
 
@@ -262,7 +263,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
   }
 
   const onVercel = Boolean(process.env.VERCEL);
-  const extrasMs = onVercel ? 7000 : 28000;
+  const extrasMs = onVercel ? 22000 : 32000;
   const espnMs = onVercel ? 6000 : 20000;
   const siteMs = onVercel ? 6500 : 18000;
 
@@ -417,7 +418,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
           propComplete = scored.complete;
           sources.unshift({
             id: "vegas",
-            label: props.books.has("Vegas") && props.books.has("DraftKings") ? "Vegas + DK" : props.books.has("Vegas") ? "Vegas" : "DraftKings",
+            label: [...props.books].join(" + ") || "Props",
             points: propProjection,
             kind: "props",
           });
@@ -562,7 +563,8 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     const sources: DataSourceInfo[] = [
       { id: "draftkings", label: "DraftKings", ok: trimmed.length > 0, players: trimmed.length },
       { id: "vegas", label: "Vegas props", ok: propsBundle.vegasPlayers > 0, players: propsBundle.vegasPlayers },
-      { id: "fanduel", label: "FanDuel totals", ok: propsBundle.fdGames > 0, players: propsBundle.fdGames },
+      { id: "fanduel", label: "FanDuel props", ok: propsBundle.fdPlayers > 0 || propsBundle.fdGames > 0, players: propsBundle.fdPlayers || propsBundle.fdGames },
+      { id: "dkprops", label: "DraftKings props", ok: propsBundle.dkPlayers > 0, players: propsBundle.dkPlayers },
       { id: "yahoo", label: "Yahoo", ok: yahooIdx.ok, players: yahooIdx.players },
       { id: "cbs", label: "CBS Sports", ok: cbsIdx.ok, players: cbsIdx.players },
       { id: "fantasypros", label: "FantasyPros + X", ok: fpIdx.ok, players: fpIdx.players },

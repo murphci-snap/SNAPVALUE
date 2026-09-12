@@ -1,5 +1,5 @@
 import { canonTeam } from "./constants";
-import { getJson, settled } from "./http";
+import { getJson, poolMap, settled } from "./http";
 import { americanToProb } from "./scoring";
 import type { Game, PropLine } from "./types";
 import { normalizeName } from "@/lib/utils";
@@ -7,6 +7,7 @@ import { normalizeName } from "@/lib/utils";
 export type PlayerProps = {
   line: PropLine;
   books: Set<string>;
+  n: Partial<Record<string, number>>;
 };
 
 export type GameLine = {
@@ -24,6 +25,7 @@ export type PropsBundle = {
   vegasPlayers: number;
   dkPlayers: number;
   fdGames: number;
+  fdPlayers: number;
 };
 
 const FD_AK = "FhMFpcPWXMeyZxOx";
@@ -47,7 +49,7 @@ function ensure(mapName: Map<string, PlayerProps>, mapTeam: Map<string, PlayerPr
   const k = playerKey(name, team);
   let row = mapTeam.get(k) ?? mapName.get(normalizeName(name));
   if (!row) {
-    row = { line: { books: [] }, books: new Set() };
+    row = { line: { books: [] }, books: new Set(), n: {} };
   }
   mapTeam.set(k, row);
   mapName.set(normalizeName(name), row);
@@ -61,8 +63,19 @@ function addBook(row: PlayerProps, book: string) {
 
 function setNum(row: PlayerProps, key: keyof Omit<PropLine, "books" | "anytimeTd">, value: number, book: string) {
   if (!Number.isFinite(value)) return;
+  const n = row.n[key] ?? 0;
   const cur = row.line[key];
-  row.line[key] = cur == null ? value : (cur + value) / 2;
+  row.line[key] = n === 0 || cur == null ? value : (cur * n + value) / (n + 1);
+  row.n[key] = n + 1;
+  addBook(row, book);
+}
+
+function setAtd(row: PlayerProps, prob: number, book: string) {
+  if (!Number.isFinite(prob) || prob <= 0 || prob >= 1) return;
+  const n = row.n.anytimeTd ?? 0;
+  const cur = row.line.anytimeTd;
+  row.line.anytimeTd = n === 0 || cur == null ? prob : (cur * n + prob) / (n + 1);
+  row.n.anytimeTd = n + 1;
   addBook(row, book);
 }
 
@@ -195,8 +208,7 @@ function parseBovada(data: unknown, byName: Map<string, PlayerProps>, byNameTeam
             if (amer == null) continue;
             const row = ensure(byName, byNameTeam, tag.name, tag.team);
             const p = americanToProb(amer);
-            row.line.anytimeTd = row.line.anytimeTd == null ? p : (row.line.anytimeTd + p) / 2;
-            addBook(row, "Vegas");
+            setAtd(row, p, "Vegas");
           }
           continue;
         }
@@ -237,10 +249,10 @@ type FdMarket = {
     runnerName?: string;
     handicap?: number;
     result?: { type?: string };
-    winRunnerOdds?: { americanDisplayOdds?: { americanOdds?: number } };
+    winRunnerOdds?: { americanDisplayOdds?: { americanOdds?: number; americanOddsInt?: number } };
   }[];
 };
-type FdEvent = { eventId?: number; name?: string };
+type FdEvent = { eventId?: number; name?: string; openDate?: string };
 
 function parseFanDuelGames(data: unknown, games: GameLine[]) {
   const root = data as { attachments?: { events?: Record<string, FdEvent>; markets?: Record<string, FdMarket> } };
@@ -352,23 +364,182 @@ function mergePropRows(a: PlayerProps, b: PlayerProps): PlayerProps {
   }
   const books = new Set([...a.books, ...b.books]);
   line.books = [...books];
-  return { line, books };
+  const n: Partial<Record<string, number>> = {};
+  for (const k of keys) {
+    n[k] = (a.n[k] ?? (a.line[k] != null ? 1 : 0)) + (b.n[k] ?? (b.line[k] != null ? 1 : 0));
+  }
+  return { line, books, n };
+}
+
+const FD_HEADERS = {
+  Origin: "https://sportsbook.fanduel.com",
+  Referer: "https://sportsbook.fanduel.com/navigation/nfl",
+};
+
+const FD_PROP_TABS = ["passing-props", "rushing-props", "receiving-props", "td-scorer-props"] as const;
+
+const ESPN_DK_TYPES: Record<string, keyof Omit<PropLine, "books" | "anytimeTd"> | "atd"> = {
+  "8": "passYds",
+  "10": "passTd",
+  "12": "rushYds",
+  "13": "recYds",
+  "14": "receptions",
+  "15": "interceptions",
+};
+
+function classifyFdMarket(marketType: string, marketName: string): keyof Omit<PropLine, "books" | "anytimeTd"> | "atd" | null {
+  const t = `${marketType} ${marketName}`.toLowerCase().replace(/[_-]+/g, " ");
+  if (
+    /\balt\b/.test(t) ||
+    t.includes("longest") ||
+    t.includes("drive") ||
+    t.includes("first touchdown") ||
+    t.includes("2nd touchdown") ||
+    t.includes("last touchdown") ||
+    t.includes("qtr") ||
+    t.includes("quarter") ||
+    t.includes("1st half") ||
+    t.includes("2nd half") ||
+    t.includes("most passing") ||
+    t.includes("either player") ||
+    t.includes("3+") ||
+    t.includes("2+")
+  ) {
+    return null;
+  }
+  if (t.includes("passing") && t.includes("rushing")) return null;
+  if (t.includes("rushing") && t.includes("receiving")) return null;
+  if (t.includes("passing") && t.includes("receiving")) return null;
+  if (t.includes("anytime") && t.includes("touchdown")) return "atd";
+  if (t.includes("any time") && t.includes("touchdown")) return "atd";
+  if (t.includes("passing yards") || t.includes("passing yds")) return "passYds";
+  if (t.includes("passing touchdown") || t.includes("passing td")) return "passTd";
+  if (t.includes("interception")) return "interceptions";
+  if (t.includes("rushing yards") || t.includes("rushing yds")) return "rushYds";
+  if (t.includes("rushing touchdown")) return "rushTd";
+  if (t.includes("receiving yards") || t.includes("receiving yds")) return "recYds";
+  if (t.includes("receiving touchdown")) return "recTd";
+  if (t.includes("receptions")) return "receptions";
+  return null;
+}
+
+function fdPlayerName(marketName: string, runnerName: string): string {
+  const fromMarket = marketName.split(" - ")[0]?.trim() ?? "";
+  if (fromMarket && fromMarket.length > 2 && !/^(over|under|yes|no)\b/i.test(fromMarket)) return fromMarket;
+  return runnerName.replace(/\s+(Over|Under|Yes|No)$/i, "").trim();
+}
+
+function parseFanDuelPlayerMarkets(
+  data: unknown,
+  byName: Map<string, PlayerProps>,
+  byNameTeam: Map<string, PlayerProps>,
+) {
+  const markets = (data as { attachments?: { markets?: Record<string, FdMarket> } }).attachments?.markets ?? {};
+  for (const m of Object.values(markets)) {
+    const kind = classifyFdMarket(m.marketType ?? "", m.marketName ?? "");
+    if (!kind) continue;
+    const runners = m.runners ?? [];
+    if (kind === "atd") {
+      for (const r of runners) {
+        const name = fdPlayerName(m.marketName ?? "", r.runnerName ?? "");
+        const amer = r.winRunnerOdds?.americanDisplayOdds?.americanOddsInt ?? r.winRunnerOdds?.americanDisplayOdds?.americanOdds;
+        if (!name || amer == null) continue;
+        const p = americanToProb(Number(amer));
+        setAtd(ensure(byName, byNameTeam, name, ""), p, "FanDuel");
+      }
+      continue;
+    }
+    const over = runners.find((r) => r.result?.type === "OVER" || /^over/i.test(r.runnerName ?? ""));
+    const line = Number(over?.handicap);
+    if (!Number.isFinite(line) || line <= 0) continue;
+    const name = fdPlayerName(m.marketName ?? "", over?.runnerName ?? runners[0]?.runnerName ?? "");
+    if (!name) continue;
+    setNum(ensure(byName, byNameTeam, name, ""), kind, line, "FanDuel");
+  }
+}
+
+function fdUpcomingEventIds(data: unknown): number[] {
+  const events = (data as { attachments?: { events?: Record<string, FdEvent & { openDate?: string }> } }).attachments?.events ?? {};
+  const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+  const ids: number[] = [];
+  for (const ev of Object.values(events)) {
+    if (!ev.eventId || !ev.name?.includes("@")) continue;
+    const t = Date.parse(ev.openDate ?? "");
+    if (Number.isFinite(t) && t < cutoff) continue;
+    ids.push(ev.eventId);
+  }
+  return ids;
+}
+
+function upcomingEspnEventIds(raw: unknown): string[] {
+  const data = raw as { events?: { id?: string; date?: string }[] };
+  const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+  const ids: string[] = [];
+  for (const ev of data.events ?? []) {
+    if (!ev.id) continue;
+    const t = Date.parse(ev.date ?? "");
+    if (Number.isFinite(t) && t < cutoff) continue;
+    ids.push(String(ev.id));
+  }
+  return ids;
+}
+
+function athleteIdFromRef(ref?: string): string | null {
+  const m = ref?.match(/athletes\/(\d+)/);
+  return m?.[1] ?? null;
+}
+
+function ensureEspn(byEspnId: EspnPropIndex, id: string): PlayerProps {
+  let row = byEspnId.get(id);
+  if (!row) {
+    row = { line: { books: [] }, books: new Set(), n: {} };
+    byEspnId.set(id, row);
+  }
+  return row;
+}
+
+function parseEspnDkPropBets(data: unknown, byEspnId: EspnPropIndex) {
+  const items =
+    (data as {
+      items?: {
+        type?: { id?: string; name?: string };
+        athlete?: { $ref?: string };
+        current?: { target?: { value?: number } };
+      }[];
+    }).items ?? [];
+  for (const it of items) {
+    const typeName = (it.type?.name ?? "").toLowerCase();
+    if (typeName.includes("plus") || typeName.includes("longest") || typeName.includes("first") || typeName.includes("last")) {
+      continue;
+    }
+    let kind: keyof Omit<PropLine, "books" | "anytimeTd"> | "atd" | null = ESPN_DK_TYPES[it.type?.id ?? ""] ?? null;
+    if (!kind && typeName.includes("anytime") && typeName.includes("touchdown")) kind = "atd";
+    if (!kind) continue;
+    const espnId = athleteIdFromRef(it.athlete?.$ref);
+    if (!espnId) continue;
+    const line = Number(it.current?.target?.value);
+    const row = ensureEspn(byEspnId, espnId);
+    if (kind === "atd") {
+      if (line > 0 && line < 1) setAtd(row, line, "DraftKings");
+      continue;
+    }
+    if (!Number.isFinite(line) || line <= 0) continue;
+    setNum(row, kind, line, "DraftKings");
+  }
 }
 
 export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropIndex }> {
   const byName = new Map<string, PlayerProps>();
   const byNameTeam = new Map<string, PlayerProps>();
+  const byEspnId: EspnPropIndex = new Map();
   const games: GameLine[] = [];
 
-  // Vegas (Bovada) carries weekly player props. FanDuel's public NFL page is game
-  // totals/spreads — season-long player props are ignored. ESPN DK propBets are
-  // paginated (30+ pages/game) and blow the slate budget; skip them.
   const [bovada, fd, espnSb] = await Promise.all([
     settled(getJson<unknown>("https://www.bovada.lv/services/sports/event/coupon/events/A/description/football/nfl?lang=en", undefined, 28000)),
     settled(
       getJson<unknown>(
         `https://sbapi.nj.sportsbook.fanduel.com/api/content-managed-page?page=CUSTOM&customPageId=nfl&_ak=${FD_AK}`,
-        undefined,
+        { headers: FD_HEADERS },
         14000,
       ),
     ),
@@ -397,15 +568,53 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
     }
   }
 
+  const fdIds = fd ? fdUpcomingEventIds(fd) : [];
+  const espnIds = espnSb ? upcomingEspnEventIds(espnSb) : [];
+  const fdJobs = fdIds.flatMap((eventId) => FD_PROP_TABS.map((tab) => ({ eventId, tab })));
+
+  await Promise.all([
+    poolMap(
+      fdJobs,
+      5,
+      async ({ eventId, tab }) => {
+        const page = await settled(
+          getJson<unknown>(
+            `https://sbapi.nj.sportsbook.fanduel.com/api/event-page?eventId=${eventId}&tab=${tab}&_ak=${FD_AK}`,
+            { headers: FD_HEADERS },
+            8000,
+          ),
+        );
+        if (page) parseFanDuelPlayerMarkets(page, byName, byNameTeam);
+      },
+      14000,
+    ),
+    poolMap(
+      espnIds,
+      4,
+      async (eid) => {
+        const page = await settled(
+          getJson<unknown>(
+            `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events/${eid}/competitions/${eid}/odds/100/propBets?lang=en&region=us&limit=1000`,
+            undefined,
+            9000,
+          ),
+        );
+        if (page) parseEspnDkPropBets(page, byEspnId);
+      },
+      14000,
+    ),
+  ]);
+
   const unique = new Set(byName.values());
   return {
     byName,
     byNameTeam,
     games,
     vegasPlayers: [...unique].filter((p) => p.books.has("Vegas")).length,
-    dkPlayers: 0,
+    dkPlayers: [...byEspnId.values()].filter((p) => p.books.has("DraftKings")).length,
     fdGames: games.filter((g) => g.books.includes("FanDuel")).length,
-    byEspnId: new Map(),
+    fdPlayers: [...unique].filter((p) => p.books.has("FanDuel")).length,
+    byEspnId,
   };
 }
 
