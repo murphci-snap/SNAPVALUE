@@ -100,6 +100,11 @@ function classifyBovada(desc: string): keyof Omit<PropLine, "books" | "anytimeTd
   if (d.includes("alternate") || d.includes("who will") || d.includes("longest") || d.includes("milestone")) {
     return null;
   }
+  // Combined yards (e.g. "Passing & Rushing Yards") must not map to a single stat —
+  // otherwise QBs get ~250 "rushYds" from pass+rush totals and rankings explode.
+  if (d.includes("passing") && d.includes("rushing")) return null;
+  if (d.includes("rushing") && d.includes("receiving")) return null;
+  if (d.includes("passing") && d.includes("receiving")) return null;
   if (d.includes("anytime touchdown")) return "atd";
   if (d.includes("passing yards")) return "passYds";
   if (d.includes("passing touchdown")) return "passTd";

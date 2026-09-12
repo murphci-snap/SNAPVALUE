@@ -21,7 +21,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 6;
+const CACHE_VER = 7;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -433,7 +433,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       if (propProjection != null) {
         rankingMethod = "props";
         if (consensusProjection != null) {
-          const w = propComplete ? 0.85 : 0.6;
+          const w = propComplete ? 0.95 : 0.7;
           projection = w * propProjection + (1 - w) * consensusProjection;
         } else {
           projection = propProjection;
