@@ -1,4 +1,5 @@
 import {
+  formatPct,
   formatSpread,
   isUpcoming,
   parlayProb,
@@ -21,6 +22,7 @@ export interface DeskBet {
   why: string;
   books: string;
   tape: string;
+  unit: string;
 }
 
 export interface TdLeg {
@@ -43,6 +45,8 @@ export interface TdParlay {
 export interface WeeklyDesk {
   bestBets: DeskBet[];
   spreadLock: DeskBet | null;
+  moneylineDog: DeskBet | null;
+  fades: DeskBet[];
   playerProps: DeskBet[];
   atdParlay: TdParlay | null;
   lottoTicket: TdParlay | null;
@@ -181,6 +185,7 @@ function propCard(
     tape: over
       ? "Public leans overs on star skill. Only take it with a real number gap."
       : "Unders are the quieter side on player yards. Street often still hammers the over.",
+    unit: "0.5u",
   };
 }
 
@@ -221,6 +226,7 @@ function bestProp(
     why: `Matchup lean on the posted ${fallback.line.toFixed(1)} yard number.`,
     books: fallback.p.props?.books?.join(" · ") || "Vegas / DK",
     tape: over ? "Smash spot vs a soft yardage D." : "Tough D / low script — take the under.",
+    unit: "0.5u",
   };
 }
 
@@ -259,6 +265,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
             : Math.abs(spread) <= 3
               ? "Action Network / street often fade short favorites in week-openers. We only take it with a mismatch."
               : "Mid-range number — books and cappers usually split.",
+        unit: "1u",
       });
     }
     const t = scoreTotal(g, players);
@@ -274,6 +281,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         why: t.why,
         books: booksFor(g),
         tape: t.pick === "over" ? "Overs are the public side. Need a real TD-market edge." : "Unders are the sharper street lean most weeks.",
+        unit: "1u",
       });
     }
   }
@@ -304,6 +312,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           why: `Quietest total on the board. Model closer to ${expected.toFixed(1)} than the posted ${g.total}.`,
           books: booksFor(g),
           tape: "Unders are the sharper street lean most weeks. Public still lives on the over.",
+          unit: "1u",
         };
       }
     }
@@ -426,9 +435,85 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     };
   }
 
+  const mlDogs: DeskBet[] = [];
+  for (const g of live) {
+    if (g.spread == null) continue;
+    const dog = g.spread > 0 ? g.homeAbbr : g.awayAbbr;
+    const fav = g.spread > 0 ? g.awayAbbr : g.homeAbbr;
+    const abs = Math.abs(g.spread);
+    if (abs < 2.5 || abs > 9.5) continue;
+    const dogWin = teamWinProb(g, dog) ?? 0.4;
+    const dogTd = impliedTdShare(players, dog);
+    const favTd = impliedTdShare(players, fav);
+    if (dogTd + 0.05 < favTd) continue;
+    const edge = 0.03 + Math.max(0, dogTd - favTd) * 0.08 + (abs >= 6 && dogTd >= favTd ? 0.02 : 0);
+    mlDogs.push({
+      id: `ml-${g.id}`,
+      title: `${dog} ML`,
+      market: "moneyline",
+      pick: `${dog} moneyline`,
+      line: `${g.awayAbbr} @ ${g.homeAbbr} · ${dog} ${formatSpread(dog === g.homeAbbr ? g.spread : -g.spread)}`,
+      edge,
+      confidence: Math.round(50 + edge * 140),
+      why: `${dog} is a playable dog (${formatPct(dogWin)}). TD prices are not a wipeout versus ${fav}. Live-dog moneyline, not a desperate +10.`,
+      books: booksFor(g),
+      tape: "Public lives on favorites. A mid-range dog with TD equity is the plus-money we want.",
+      unit: "0.5u",
+    });
+  }
+  mlDogs.sort((a, b) => b.edge - a.edge);
+  const moneylineDog = mlDogs[0] ?? null;
+
+  const fades: DeskBet[] = [];
+  for (const g of live) {
+    if (g.spread == null) continue;
+    const abs = Math.abs(g.spread);
+    const fav = g.spread < 0 ? g.homeAbbr : g.awayAbbr;
+    const dog = g.spread < 0 ? g.awayAbbr : g.homeAbbr;
+    const favTd = impliedTdShare(players, fav);
+    const dogTd = impliedTdShare(players, dog);
+    if (abs >= 2.5 && abs <= 3.5 && Math.abs(favTd - dogTd) < 0.12) {
+      fades.push({
+        id: `fade-short-${g.id}`,
+        title: `Fade ${fav}`,
+        market: "spread",
+        pick: `Pass ${fav} ${formatSpread(fav === g.homeAbbr ? g.spread : -g.spread)}`,
+        line: `${g.awayAbbr} @ ${g.homeAbbr}`,
+        edge: 0.05,
+        confidence: 58,
+        why: `Short favorite in a coin-flip TD market. Street will still hammer ${fav}. We stand down.`,
+        books: booksFor(g),
+        tape: "Classic trap number. No bet is the bet.",
+        unit: "0u",
+      });
+    }
+    if (g.total != null && g.total >= 48) {
+      const td = favTd + dogTd;
+      const expected = 38 + td * 14 + (g.isDome ? 1.4 : 0);
+      if (expected < g.total - 1) {
+        fades.push({
+          id: `fade-over-${g.id}`,
+          title: `Fade Over ${g.total}`,
+          market: "total",
+          pick: `Pass the over ${g.total}`,
+          line: `${g.awayAbbr} @ ${g.homeAbbr}`,
+          edge: 0.04,
+          confidence: 55,
+          why: `Posted ${g.total} is a public magnet. TD market looks closer to ${expected.toFixed(1)}.`,
+          books: booksFor(g),
+          tape: "Do not chase the shootout just because the number is loud.",
+          unit: "0u",
+        });
+      }
+    }
+  }
+  fades.sort((a, b) => b.edge - a.edge);
+
   return {
-    bestBets: bestBets.slice(0, 3).map((b, i) => ({ ...b, confidence: clampConf(b.confidence, i) })),
+    bestBets: bestBets.slice(0, 3).map((b, i) => ({ ...b, confidence: clampConf(b.confidence, i), unit: b.unit || "1u" })),
     spreadLock,
+    moneylineDog,
+    fades: fades.slice(0, 3),
     playerProps,
     atdParlay,
     lottoTicket,

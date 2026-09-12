@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { NFL_ABBR } from "@/lib/dfs/constants";
 import { kickoffLabel } from "@/lib/dfs/format-ui";
 import { formatPct, formatSpread } from "@/lib/dfs/markets";
-import { buildPoolPlan, type PoolKind, type PoolPick } from "@/lib/dfs/pools";
+import { buildPoolPlan, type PoolKind, type PoolPick, type PoolWatch } from "@/lib/dfs/pools";
 import type { Game } from "@/lib/dfs/types";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +40,30 @@ function styleLabel(style: PoolPick["style"]): string {
   return "Ladder";
 }
 
-function EntryCard({ pick, kind }: { pick: PoolPick; kind: PoolKind }) {
+function WatchRow({ row, tone }: { row: PoolWatch; tone: "value" | "warn" }) {
+  return (
+    <li className="rounded-lg bg-secondary px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="display text-lg leading-none font-semibold">{row.team}</p>
+        <p className={cn("font-mono text-xs tabular-nums", tone === "value" ? "text-value" : "text-warn")}>
+          {formatPct(row.rate)}
+          {row.spread != null ? ` · ${formatSpread(row.spread)}` : ""}
+        </p>
+      </div>
+      <p className="text-muted-foreground mt-1 text-xs leading-snug">{row.why}</p>
+    </li>
+  );
+}
+
+function EntryCard({
+  pick,
+  kind,
+  onLock,
+}: {
+  pick: PoolPick;
+  kind: PoolKind;
+  onLock: (team: string) => void;
+}) {
   const loc = pick.home ? "vs" : "@";
   const rate = kind === "survivor" ? pick.winProb : pick.loseProb;
   return (
@@ -48,6 +71,7 @@ function EntryCard({ pick, kind }: { pick: PoolPick; kind: PoolKind }) {
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
           Ticket {pick.entry} · {styleLabel(pick.style)}
+          {pick.late ? " · Late" : ""}
         </p>
         <p className="font-mono text-sm text-value tabular-nums">{formatPct(rate)}</p>
       </div>
@@ -57,13 +81,16 @@ function EntryCard({ pick, kind }: { pick: PoolPick; kind: PoolKind }) {
         {pick.spread != null ? ` · ${formatSpread(pick.spread)}` : ""} · {kickoffLabel(pick.kickoff)}
       </p>
       <p className="mt-3 text-sm leading-snug">{pick.why}</p>
-      <p className="text-ink mt-2 text-[12px] leading-snug">{pick.publicNote}</p>
+      <p className="text-ink mt-2 text-xs leading-snug">{pick.publicNote}</p>
       {pick.backup && (
-        <p className="text-muted-foreground mt-3 border-t border-border pt-2 text-[12px]">
+        <p className="text-muted-foreground mt-3 border-t border-border pt-2 text-xs">
           Pivot {pick.backup}
           {pick.backupWhy ? ` — ${pick.backupWhy}` : ""}
         </p>
       )}
+      <Button variant="secondary" className="mt-3 h-10 w-full" onClick={() => onLock(pick.team)}>
+        Mark {pick.team} used
+      </Button>
     </article>
   );
 }
@@ -102,6 +129,10 @@ function PoolBlock({
     setUsed((prev) => (prev.includes(team) ? prev.filter((t) => t !== team) : [...prev, team]));
   }
 
+  function lock(team: string) {
+    setUsed((prev) => (prev.includes(team) ? prev : [...prev, team]));
+  }
+
   return (
     <section>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
@@ -133,7 +164,31 @@ function PoolBlock({
         </div>
       </div>
 
-      <p className="text-ink mb-3 text-[12px]">{plan.note}</p>
+      <p className="text-ink mb-3 text-xs">{plan.note}</p>
+
+      {plan.hammers.length > 0 ? (
+        <div className="mb-4">
+          <p className="text-faint mb-2 text-[10px] tracking-[0.16em] uppercase">
+            {kind === "survivor" ? "Save these hammers" : "True dogs — do not stack"}
+          </p>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {plan.hammers.map((row) => (
+              <WatchRow key={row.team} row={row} tone="value" />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {plan.traps.length > 0 ? (
+        <div className="mb-4">
+          <p className="text-faint mb-2 text-[10px] tracking-[0.16em] uppercase">Do not play</p>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {plan.traps.map((row) => (
+              <WatchRow key={row.team} row={row} tone="warn" />
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <p className="text-faint mb-2 text-[10px] tracking-[0.16em] uppercase">Already used — tap to fade</p>
       <div className="mb-4 flex flex-wrap gap-1">
@@ -158,9 +213,9 @@ function PoolBlock({
       {plan.entries.length === 0 ? (
         <p className="text-muted-foreground text-sm">Mark fewer used teams or wait for this week’s lines.</p>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {plan.entries.map((pick) => (
-            <EntryCard key={`${kind}-${pick.entry}-${pick.team}`} pick={pick} kind={kind} />
+            <EntryCard key={`${kind}-${pick.entry}-${pick.team}`} pick={pick} kind={kind} onLock={lock} />
           ))}
         </div>
       )}
@@ -175,20 +230,23 @@ export function PoolStudio({ games }: { games: Game[] }) {
         <h2 className="display text-2xl leading-none font-semibold">Survivor / Loser</h2>
         <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
           Two contests, same week. Survivor: pick a winner. Loser: pick a team to lose. Multiple tickets stay unique.
+          Mark a pick used after you submit it so next week’s hammers stay honest.
         </p>
       </header>
-      <PoolBlock
-        kind="survivor"
-        title="Survivor"
-        kicker="Pick a winner each week. You cannot reuse a team. Multiple tickets should not share a team — ticket 1 is the floor, later tickets stay unique and save hammers."
-        games={games}
-      />
-      <PoolBlock
-        kind="loser"
-        title="Loser pool"
-        kicker="Pick a team to lose. Multiple tickets split games so one upset cannot wipe every entry. Ticket 1 is the heaviest dog; later tickets get less crowded."
-        games={games}
-      />
+      <div className="grid gap-12 xl:grid-cols-2">
+        <PoolBlock
+          kind="survivor"
+          title="Survivor"
+          kicker="Pick a winner each week. You cannot reuse a team. Ticket 1 is the floor. Hold future hammers. Skip skinny favorites."
+          games={games}
+        />
+        <PoolBlock
+          kind="loser"
+          title="Loser pool"
+          kicker="Pick a team to lose. Split games so one upset cannot wipe every entry. Ticket 1 is the heaviest dog."
+          games={games}
+        />
+      </div>
     </div>
   );
 }

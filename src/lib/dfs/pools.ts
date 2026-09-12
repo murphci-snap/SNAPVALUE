@@ -28,12 +28,23 @@ export interface PoolPick {
   backup: string | null;
   backupWhy: string | null;
   publicNote: string;
+  late: boolean;
+}
+
+export interface PoolWatch {
+  team: string;
+  opponent: string;
+  spread: number | null;
+  rate: number;
+  why: string;
 }
 
 export interface PoolPlan {
   kind: PoolKind;
   entries: PoolPick[];
   leftover: string[];
+  hammers: PoolWatch[];
+  traps: PoolWatch[];
   note: string;
 }
 
@@ -127,6 +138,20 @@ export function buildPoolPlan(
   used: string[],
 ): PoolPlan {
   const live = upcomingGames(games);
+  const earliest = live.reduce((min, g) => {
+    const t = Date.parse(g.startTime);
+    return Number.isFinite(t) && t < min ? t : min;
+  }, Number.POSITIVE_INFINITY);
+
+  function late(iso: string): boolean {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t) || !Number.isFinite(earliest)) return false;
+    if (t - earliest > 32 * 3600 * 1000) return true;
+    const d = new Date(t);
+    const dow = d.getUTCDay();
+    const h = d.getUTCHours();
+    return (dow === 1 && h < 8) || (dow === 2 && h < 8);
+  }
   const usedSet = new Set(used.filter((t) => NFL_ABBR.includes(t)));
   const n = Math.max(1, Math.min(10, Math.floor(entryCount) || 1));
   const picks: PoolPick[] = [];
@@ -211,10 +236,60 @@ export function buildPoolPlan(
       backup,
       backupWhy,
       publicNote: publicNote(kind, kind === "survivor" ? win : 1 - win, best.team),
+      late: late(g.startTime),
     });
   }
 
   const leftover = NFL_ABBR.filter((t) => !usedSet.has(t) && !takenTeams.has(t));
+  const hammers: PoolWatch[] = [];
+  const traps: PoolWatch[] = [];
+  for (const team of leftover) {
+    const g = gameOf(live, team);
+    if (!g) continue;
+    const win = teamWinProb(g, team);
+    if (win == null) continue;
+    const spread = teamSpread(g, team);
+    const opp = otherTeam(g, team);
+    const rate = kind === "survivor" ? win : 1 - win;
+    if (kind === "survivor") {
+      if (win >= 0.75) {
+        hammers.push({
+          team,
+          opponent: opp,
+          spread,
+          rate: win,
+          why: `${team} ${spread == null ? "" : formatSpread(spread)} vs ${opp} is a future hammer. Do not spend it unless you have to.`,
+        });
+      } else if (win >= 0.52 && win <= 0.62) {
+        traps.push({
+          team,
+          opponent: opp,
+          spread,
+          rate: win,
+          why: `${team} looks “safe” at ${formatPct(win)} and dies in pools every week. Sit it out.`,
+        });
+      }
+    } else if (1 - win >= 0.75) {
+      hammers.push({
+        team,
+        opponent: opp,
+        spread,
+        rate: 1 - win,
+        why: `${team} is the true dog. If you have multiple tickets, do not put every entry here.`,
+      });
+    } else if (1 - win >= 0.52 && 1 - win <= 0.6) {
+      traps.push({
+        team,
+        opponent: opp,
+        spread,
+        rate: 1 - win,
+        why: `${team} is a skinny dog. Loser pools bleed out on these.`,
+      });
+    }
+  }
+  hammers.sort((a, b) => b.rate - a.rate);
+  traps.sort((a, b) => a.rate - b.rate);
+
   const note =
     kind === "survivor"
       ? n === 1
@@ -224,5 +299,6 @@ export function buildPoolPlan(
         ? "One ticket: pick the team most likely to lose. Do not get cute."
         : `${n} tickets: never double a team. Split games so one upset cannot wipe every entry.`;
 
-  return { kind, entries: picks, leftover, note };
+  return { kind, entries: picks, leftover, hammers: hammers.slice(0, 6), traps: traps.slice(0, 5), note };
 }
+
