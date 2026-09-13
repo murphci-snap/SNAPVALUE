@@ -26,48 +26,53 @@ export function CheapImpactRack({
     <section>
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="display text-xl font-semibold">Bargain bin</h2>
-        <p className="text-faint text-[11px] tracking-wide uppercase">Pts / $1k · cheap tier</p>
+        <p className="text-value text-[11px] tracking-[0.16em] uppercase">Bang for the buck</p>
       </div>
       <p className="text-muted-foreground mb-3 max-w-2xl text-sm">
-        Cheap salary, still useful in Classic as FLEX or the last skill slot — bang for the buck. One name at each
-        spot from the low-pay tier. Overlap with Best Value is OK.
+        Cheap salary, still useful in Classic as FLEX or the last skill slot. One name at each spot from the low-pay
+        tier. Overlap with Best Value is OK.
       </p>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {groups.map((group) => (
-          <div key={group.pos} className="rounded-xl bg-card p-3 shadow-[var(--shadow-border)]">
-            <div className="mb-2 flex items-baseline justify-between">
-              <h3 className="display text-lg leading-none font-semibold">{group.pos}</h3>
-              <span className="text-value text-[10px] tracking-[0.16em] uppercase">Bargain</span>
+        {groups.map((group) => {
+          const p = group.players[0];
+          return (
+            <div key={group.pos} className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+              <div className="mb-2 flex items-baseline justify-between gap-2">
+                <h3 className="display text-lg leading-none font-semibold">{group.pos}</h3>
+                <span className="text-faint text-[10px] tracking-[0.16em] uppercase">Bargain</span>
+              </div>
+              {!p ? (
+                <p className="text-muted-foreground text-xs">No cheap names on this slate.</p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onSelect(p)}
+                  className="hover:bg-accent flex w-full flex-col rounded-lg px-1 py-1 text-left transition-colors duration-150"
+                >
+                  <span className="truncate text-base font-medium">{p.name}</span>
+                  <span className="text-muted-foreground mt-0.5 text-xs">
+                    {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)}
+                  </span>
+                  <span className="mt-3 flex items-end justify-between gap-2">
+                    <span>
+                      <span className="text-faint block text-[10px] tracking-[0.16em] uppercase">Val · pts/$1k</span>
+                      <span className="display text-value text-3xl leading-none font-semibold tabular-nums">
+                        {p.value.toFixed(2)}
+                      </span>
+                    </span>
+                    <span className="text-right">
+                      <span className="text-faint block text-[10px] tracking-[0.16em] uppercase">Proj</span>
+                      <span className="font-mono text-sm tabular-nums">{formatPts(p.projection)}</span>
+                    </span>
+                  </span>
+                  {p.cheapImpactWhy ? (
+                    <span className="text-ink mt-2 text-xs leading-snug">{p.cheapImpactWhy}</span>
+                  ) : null}
+                </button>
+              )}
             </div>
-            {group.players.length === 0 ? (
-              <p className="text-muted-foreground text-xs">No cheap names on this slate.</p>
-            ) : (
-              <ol className="flex flex-col gap-1.5">
-                {group.players.map((p, i) => (
-                  <li key={p.id}>
-                    <button
-                      type="button"
-                      onClick={() => onSelect(p)}
-                      className="hover:bg-accent flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left"
-                    >
-                      <span className="text-faint w-4 font-mono text-xs">{i + 1}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{p.name}</span>
-                        <span className="text-muted-foreground text-[11px]">
-                          {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)}
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 flex-col items-end">
-                        <span className="text-value font-mono text-sm tabular-nums">{p.value.toFixed(2)}</span>
-                        <span className="text-faint font-mono text-[11px] tabular-nums">{formatPts(p.projection)}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
