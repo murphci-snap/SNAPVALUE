@@ -162,7 +162,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
               onToggleLock={toggleLock}
             />
           )}
-          {tab === "pools" && <PoolStudio games={data.games} />}
+          {tab === "pools" && <PoolStudio games={data.games} week={data.week} />}
           {tab === "bets" && <BetDesk games={data.games} players={data.players} />}
           {tab === "ppr" && <PprBoard data={data} />}
         </div>

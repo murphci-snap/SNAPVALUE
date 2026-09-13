@@ -29,6 +29,7 @@ export interface PoolPick {
   backupWhy: string | null;
   publicNote: string;
   late: boolean;
+  playWhy: string;
 }
 
 export interface PoolWatch {
@@ -129,6 +130,48 @@ function whyLoser(team: string, opp: string, home: boolean, spread: number | nul
   return `${team}${line} ${loc} against ${opp} profiles as a loss without doubling the same game as ticket 1.`;
 }
 
+function playWhySurvivor(
+  week: number,
+  team: string,
+  opp: string,
+  home: boolean,
+  spread: number | null,
+  win: number,
+  style: EntryStyle,
+): string {
+  const loc = home ? "at home" : "on the road";
+  const line = spread == null ? "" : ` ${formatSpread(spread)}`;
+  const wk = `Week ${week}`;
+  if (style === "chalk") {
+    return `${wk}: ${team}${line} ${loc} vs ${opp}. Win rate ${formatPct(win)}. Cash this ticket now.`;
+  }
+  if (style === "contrarian") {
+    return `${wk}: ${team}${line} vs ${opp} at ${formatPct(win)} — quieter than the pile-on chalk. Play it for uniqueness.`;
+  }
+  return `${wk}: ${team}${line} ${loc} vs ${opp}. ${formatPct(win)} to win on this spread. Play it this week.`;
+}
+
+function playWhyLoser(
+  week: number,
+  team: string,
+  opp: string,
+  home: boolean,
+  spread: number | null,
+  lose: number,
+  style: EntryStyle,
+): string {
+  const loc = home ? "at home" : "on the road";
+  const line = spread == null ? "" : ` ${formatSpread(spread)}`;
+  const wk = `Week ${week}`;
+  if (style === "chalk") {
+    return `${wk}: ${team}${line} ${loc} vs ${opp}. ${formatPct(lose)} to lose. This is the ticket that has to cash.`;
+  }
+  if (style === "contrarian") {
+    return `${wk}: ${team}${line} at ${formatPct(lose)} to lose — softer dog, different game from ticket 1.`;
+  }
+  return `${wk}: ${team}${line} ${loc} against ${opp}. ${formatPct(lose)} to lose. Split it off the chalk dog.`;
+}
+
 function publicNote(kind: PoolKind, winOrLose: number, team: string): string {
   if (kind === "survivor") {
     if (winOrLose >= 0.78) return `Street chalk — a huge share of survivor entries will be on ${team}.`;
@@ -144,6 +187,7 @@ export function buildPoolPlan(
   games: Game[],
   entryCount: number,
   used: string[],
+  week = 1,
 ): PoolPlan {
   const live = upcomingGames(games);
   const earliest = live.reduce((min, g) => {
@@ -265,12 +309,24 @@ export function buildPoolPlan(
       kickoff: g.startTime,
       why:
         kind === "survivor"
-          ? whySurvivor(best.team, opp, home, spread, win, style, hammerTeams.has(best.team) && style !== "chalk")
+          ? whySurvivor(
+              best.team,
+              opp,
+              home,
+              spread,
+              win,
+              style,
+              week > 2 && hammerTeams.has(best.team) && style !== "chalk",
+            )
           : whyLoser(best.team, opp, home, spread, 1 - win, style),
       backup,
       backupWhy,
       publicNote: publicNote(kind, kind === "survivor" ? win : 1 - win, best.team),
       late: late(g.startTime),
+      playWhy:
+        kind === "survivor"
+          ? playWhySurvivor(week, best.team, opp, home, spread, win, style)
+          : playWhyLoser(week, best.team, opp, home, spread, 1 - win, style),
     });
   }
 
@@ -335,12 +391,16 @@ export function buildPoolPlan(
 
   const note =
     kind === "survivor"
-      ? n === 1
-        ? "One ticket: take the safest win this week. True leftover hammers stay on the bench unless the board is ugly."
-        : `${n} tickets: different teams every time. Ticket 1 is this week’s safest win. Later tickets stay unique. Only the top leftover hammers are saved.`
-      : n === 1
-        ? "One ticket: pick the team most likely to lose. Do not get cute."
-        : `${n} tickets: never double a team. Split games so one upset cannot wipe every entry.`;
+      ? week <= 2
+        ? `Week ${week}: early season. Don’t hoard every favorite — you need to cash tickets now. Ticket 1 chalk is allowed. True hammers are only the top leftover names still on the bench.`
+        : n === 1
+          ? "One ticket: take the safest win this week. True leftover hammers stay on the bench unless the board is ugly."
+          : `${n} tickets: different teams every time. Ticket 1 is this week’s safest win. Later tickets stay unique. Only the top leftover hammers are saved.`
+      : week <= 2
+        ? `Week ${week}: take the most likely loss. Don’t get cute just because it’s early.`
+        : n === 1
+          ? "One ticket: pick the team most likely to lose. Do not get cute."
+          : `${n} tickets: never double a team. Split games so one upset cannot wipe every entry.`;
 
   return { kind, entries: picks, leftover, hammers: hammers.slice(0, 3), traps: traps.slice(0, 5), note };
 }

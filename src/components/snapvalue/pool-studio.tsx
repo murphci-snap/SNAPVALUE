@@ -35,7 +35,7 @@ function persist(key: string, value: unknown) {
 
 function styleLabel(style: PoolPick["style"]): string {
   if (style === "chalk") return "Floor";
-  if (style === "value") return "Save hammers";
+  if (style === "value") return "This week";
   if (style === "contrarian") return "Unique";
   return "Ladder";
 }
@@ -100,11 +100,13 @@ function PoolBlock({
   title,
   kicker,
   games,
+  week,
 }: {
   kind: PoolKind;
   title: string;
   kicker: string;
   games: Game[];
+  week: number;
 }) {
   const usedKey = `snapvalue.${kind}.used`;
   const nKey = `snapvalue.${kind}.n`;
@@ -123,7 +125,7 @@ function PoolBlock({
     persist(usedKey, used);
   }, [used, usedKey]);
 
-  const plan = useMemo(() => buildPoolPlan(kind, games, entries, used), [kind, games, entries, used]);
+  const plan = useMemo(() => buildPoolPlan(kind, games, entries, used, week), [kind, games, entries, used, week]);
 
   function toggle(team: string) {
     setUsed((prev) => (prev.includes(team) ? prev.filter((t) => t !== team) : [...prev, team]));
@@ -166,10 +168,41 @@ function PoolBlock({
 
       <p className="text-ink mb-3 text-xs">{plan.note}</p>
 
+      {plan.entries.length > 0 ? (
+        <div className="mb-5">
+          <p className="text-faint mb-2 text-[10px] tracking-[0.16em] uppercase">
+            Week {week} plays · Play these this week
+          </p>
+          <ol className="grid gap-2">
+            {plan.entries.slice(0, Math.min(3, plan.entries.length)).map((pick) => {
+              const rate = kind === "survivor" ? pick.winProb : pick.loseProb;
+              return (
+                <li key={`play-${kind}-${pick.entry}`} className="rounded-xl bg-card px-4 py-3 shadow-[var(--shadow-border)]">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="display text-2xl leading-none font-semibold">
+                      Ticket {pick.entry} · {pick.team}
+                    </p>
+                    <p className="font-mono text-sm text-value tabular-nums">
+                      {formatPct(rate)}
+                      {pick.spread != null ? ` · ${formatSpread(pick.spread)}` : ""}
+                    </p>
+                  </div>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {pick.home ? "vs" : "@"} {pick.opponent} · {kickoffLabel(pick.kickoff)}
+                    {pick.late ? " · Late" : ""}
+                  </p>
+                  <p className="mt-2 text-sm leading-snug">{pick.playWhy}</p>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      ) : null}
+
       {plan.hammers.length > 0 ? (
         <div className="mb-4">
           <p className="text-faint mb-2 text-[10px] tracking-[0.16em] uppercase">
-            {kind === "survivor" ? "Save these hammers" : "True dogs — do not stack"}
+            {kind === "survivor" ? "Save these" : "True dogs — do not stack"}
           </p>
           <ul className="grid gap-2 sm:grid-cols-2">
             {plan.hammers.map((row) => (
@@ -223,28 +256,40 @@ function PoolBlock({
   );
 }
 
-export function PoolStudio({ games }: { games: Game[] }) {
+export function PoolStudio({ games, week }: { games: Game[]; week: number }) {
+  const early = week <= 2;
   return (
     <div className="flex flex-col gap-12">
       <header>
         <h2 className="display text-2xl leading-none font-semibold">Survivor / Loser</h2>
         <p className="text-muted-foreground mt-1 max-w-2xl text-sm">
-          Two contests, same week. Survivor: pick a winner. Loser: pick a team to lose. Multiple tickets stay unique.
-          Mark a pick used after you submit it so next week’s hammers stay honest.
+          {early
+            ? `Week ${week}: early season. Don’t sit on every favorite — cash tickets now. Ticket 1 chalk is allowed. True leftover hammers are only the top names still on the bench.`
+            : `Two contests, same week. Survivor: pick a winner. Loser: pick a team to lose. Multiple tickets stay unique.`}
         </p>
       </header>
       <div className="grid gap-12 xl:grid-cols-2">
         <PoolBlock
           kind="survivor"
           title="Survivor"
-          kicker="Ticket 1 = safest win. Save true leftover hammers for worse weeks. Skip skinny 3-point favorites."
+          kicker={
+            early
+              ? `Week ${week}: Ticket 1 = safest win. Cash it. Save only the top leftover hammers for worse weeks.`
+              : `Ticket 1 = safest win. Save true leftover hammers for worse weeks. Skip skinny 3-point favorites.`
+          }
           games={games}
+          week={week}
         />
         <PoolBlock
           kind="loser"
           title="Loser pool"
-          kicker="Pick a team to lose. Split games so one upset cannot wipe every entry. Ticket 1 is the heaviest dog."
+          kicker={
+            early
+              ? `Week ${week}: pick the team most likely to lose. Split tickets. Don’t get cute because it’s early.`
+              : `Pick a team to lose. Split games so one upset cannot wipe every entry. Ticket 1 is the heaviest dog.`
+          }
           games={games}
+          week={week}
         />
       </div>
     </div>
