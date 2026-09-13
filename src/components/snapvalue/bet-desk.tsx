@@ -66,7 +66,7 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
     <div className="flex flex-col gap-10">
       <p className="text-muted-foreground max-w-2xl text-sm">
         Units: best bets and the spread lock are 1u. Player props and the moneyline dog are 0.5u. Two-leg ATD 0.5u.
-        Lotto 0.1u. Fades are sit-outs, not bets. Fun only.
+        Two-player 2+ TD 0.25u. Lotto 0.1u. Fades are sit-outs, not bets. Fun only.
       </p>
 
       <section>
@@ -196,6 +196,42 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
           </article>
         ) : (
           <p className="text-muted-foreground text-sm">Need two priced anytime-TD names on separate games.</p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="display text-2xl font-semibold">Two-player 2+ TD</h2>
+        <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
+          Two legs, two games. Each player 2 or more TDs. 0.25u. Not a same-game parlay.
+        </p>
+        {desk.multiTdParlay ? (
+          <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">2-leg 2+ TD · 0.25u</p>
+              <p className="display text-3xl leading-none font-semibold">
+                {formatAmerican(desk.multiTdParlay.combinedAmerican)}
+                <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
+                  {formatPct(desk.multiTdParlay.combinedProb)} combined
+                </span>
+              </p>
+            </div>
+            <ol className="mt-4 grid gap-3 md:grid-cols-2">
+              {desk.multiTdParlay.legs.map((leg, i) => (
+                <li key={leg.name} className="rounded-lg bg-secondary px-3 py-3">
+                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">Leg {i + 1} · 2+ TDs</p>
+                  <p className="display text-2xl leading-none font-semibold">{leg.name}</p>
+                  <p className="text-muted-foreground mt-1 font-mono text-sm">
+                    {formatAmerican(leg.american)} · {leg.team} vs {leg.opponent}
+                  </p>
+                  <p className="mt-2 text-xs leading-snug">{leg.why}</p>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-4 text-sm leading-relaxed">{desk.multiTdParlay.why}</p>
+            <p className="text-ink mt-2 text-xs leading-relaxed">{desk.multiTdParlay.tape}</p>
+          </article>
+        ) : (
+          <p className="text-muted-foreground text-sm">Need two 2+ TD candidates on separate games.</p>
         )}
       </section>
 

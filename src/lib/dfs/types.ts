@@ -84,6 +84,7 @@ export interface PropLine {
   recYds?: number;
   recTd?: number;
   anytimeTd?: number;
+  twoPlusTd?: number;
   books: string[];
 }
 

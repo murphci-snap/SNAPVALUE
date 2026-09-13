@@ -50,6 +50,7 @@ export interface WeeklyDesk {
   fades: DeskBet[];
   playerProps: DeskBet[];
   atdParlay: TdParlay | null;
+  multiTdParlay: TdParlay | null;
   lottoTicket: TdParlay | null;
   sources: string[];
 }
@@ -283,6 +284,30 @@ function atdProb(p: Player): number {
   return Math.max(0, 1 - Math.exp(-Math.max(0.05, exp)));
 }
 
+/** P(2+ TDs). Posted 2+ market when present; else conservative Poisson from ATD / TD lines. */
+function twoPlusProb(p: Player): { prob: number; priced: boolean } {
+  const posted = p.props?.twoPlusTd;
+  if (posted != null && posted > 0.02 && posted < 0.7) return { prob: posted, priced: true };
+  const atd = atdProb(p);
+  const weekLam = (p.week?.rushTd ?? 0) + (p.week?.recTd ?? 0) + (p.position === "QB" ? (p.week?.rushTd ?? 0) * 0.25 : 0);
+  let lam = 0;
+  if (atd > 0.08 && atd < 0.92) lam = -Math.log(1 - atd);
+  if (weekLam > lam) lam = weekLam;
+  const rushLine = p.props?.rushTd;
+  const recLine = p.props?.recTd;
+  if (rushLine != null) lam = Math.max(lam, rushLine);
+  if (recLine != null) lam = Math.max(lam, recLine * 0.85);
+  lam *= 0.82;
+  if (lam < 0.18) return { prob: 0, priced: false };
+  const p0 = Math.exp(-lam);
+  const p1 = lam * p0;
+  return { prob: clamp(1 - p0 - p1, 0.03, 0.38), priced: false };
+}
+
+function gameOfPlayer(p: Player, games: Game[]): Game | undefined {
+  return games.find((g) => g.homeAbbr === p.team || g.awayAbbr === p.team);
+}
+
 export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   const live = games.filter((g) => isUpcoming(g));
   const ats: DeskBet[] = [];
@@ -431,6 +456,80 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     }
   }
 
+  const multiPool = players
+    .filter((p) => {
+      if (p.position === "DST" || !p.isStarter) return false;
+      if (/out|ir|doubtful|suspended/i.test(p.injury ?? "") || /^(out|ir|doubtful)/i.test(p.status)) return false;
+      if (!kickoffOk(p.startTime)) return false;
+      if (p.position === "TE") return false;
+      return true;
+    })
+    .map((p) => {
+      const { prob, priced } = twoPlusProb(p);
+      const g = gameOfPlayer(p, games);
+      const total = g?.total ?? 44;
+      const imp = g ? (p.home ? g.homeImplied : g.awayImplied) : null;
+      let s = prob * 12;
+      if (p.position === "RB") s += 0.9;
+      else if (p.position === "QB") s += p.week && p.week.rushTd >= 0.35 ? 0.45 : 0.05;
+      else s += 0.12;
+      if (p.oppRank >= 24) s += 0.35;
+      if (total >= 47) s += 0.25;
+      if (imp != null && imp >= 26) s += 0.2;
+      if (p.itFactor) s += 0.15;
+      return { p, prob, priced, american: probToAmerican(prob), s };
+    })
+    .filter((x) => x.prob >= 0.06 && x.prob <= 0.42)
+    .sort((a, b) => b.s - a.s);
+
+  const atdNames = new Set((atdParlay?.legs ?? []).map((l) => l.name));
+
+  function pickMultiPair(avoidAtd: boolean) {
+    for (let i = 0; i < multiPool.length; i++) {
+      for (let j = i + 1; j < multiPool.length; j++) {
+        const a = multiPool[i]!;
+        const b = multiPool[j]!;
+        if (a.p.team === b.p.team) continue;
+        if (a.p.gameName === b.p.gameName) continue;
+        if (avoidAtd && atdNames.has(a.p.name) && atdNames.has(b.p.name)) continue;
+        return [a, b] as const;
+      }
+    }
+    return null;
+  }
+
+  const multiPair = pickMultiPair(true) ?? pickMultiPair(false);
+  let multiTdParlay: TdParlay | null = null;
+  if (multiPair) {
+    const [a, b] = multiPair;
+    const combined = parlayProb([a.prob, b.prob]);
+    const thin = !a.priced || !b.priced;
+    multiTdParlay = {
+      legs: [
+        {
+          name: a.p.name,
+          team: a.p.team,
+          opponent: a.p.opponent,
+          american: a.american,
+          prob: a.prob,
+          why: `${a.p.position} · ${a.p.team} ${a.p.home ? "vs" : "@"} ${a.p.opponent} · 2+ TDs${a.priced ? "" : " · price thin — model lean"}`,
+        },
+        {
+          name: b.p.name,
+          team: b.p.team,
+          opponent: b.p.opponent,
+          american: b.american,
+          prob: b.prob,
+          why: `${b.p.position} · ${b.p.team} ${b.p.home ? "vs" : "@"} ${b.p.opponent} · 2+ TDs${b.priced ? "" : " · price thin — model lean"}`,
+        },
+      ],
+      combinedAmerican: probToAmerican(combined),
+      combinedProb: combined,
+      why: `Two independent games. Each player 2+ TDs (not anytime). Prefer RBs / rushing QBs. Not a same-game parlay.${thin ? " 2+ markets are thin this slate — prices are model leans from ATD / TD lines." : ""}`,
+      tape: "Longer-shot than the ATD two-leg. 0.25u. One miss kills it. Fun only.",
+    };
+  }
+
   const lottoPool = players
     .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
     .map((p) => {
@@ -559,6 +658,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     fades: fades.slice(0, 3),
     playerProps,
     atdParlay,
+    multiTdParlay,
     lottoTicket,
     sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "SNAPVALUE model", "Public tape + X cappers"],
   };

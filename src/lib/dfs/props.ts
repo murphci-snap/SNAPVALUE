@@ -61,7 +61,7 @@ function addBook(row: PlayerProps, book: string) {
   row.line.books = [...row.books];
 }
 
-function setNum(row: PlayerProps, key: keyof Omit<PropLine, "books" | "anytimeTd">, value: number, book: string) {
+function setNum(row: PlayerProps, key: keyof Omit<PropLine, "books" | "anytimeTd" | "twoPlusTd">, value: number, book: string) {
   if (!Number.isFinite(value)) return;
   const n = row.n[key] ?? 0;
   const cur = row.line[key];
@@ -76,6 +76,15 @@ function setAtd(row: PlayerProps, prob: number, book: string) {
   const cur = row.line.anytimeTd;
   row.line.anytimeTd = n === 0 || cur == null ? prob : (cur * n + prob) / (n + 1);
   row.n.anytimeTd = n + 1;
+  addBook(row, book);
+}
+
+function setTwoPlus(row: PlayerProps, prob: number, book: string) {
+  if (!Number.isFinite(prob) || prob <= 0 || prob >= 1) return;
+  const n = row.n.twoPlusTd ?? 0;
+  const cur = row.line.twoPlusTd;
+  row.line.twoPlusTd = n === 0 || cur == null ? prob : (cur * n + prob) / (n + 1);
+  row.n.twoPlusTd = n + 1;
   addBook(row, book);
 }
 
@@ -108,7 +117,7 @@ function parsePlayerTag(raw: string): { name: string; team: string } | null {
   return null;
 }
 
-function classifyBovada(desc: string): keyof Omit<PropLine, "books" | "anytimeTd"> | "atd" | null {
+function classifyBovada(desc: string): keyof Omit<PropLine, "books" | "anytimeTd" | "twoPlusTd"> | "atd" | "twoPlus" | null {
   const d = desc.toLowerCase();
   if (d.includes("alternate") || d.includes("who will") || d.includes("longest") || d.includes("milestone")) {
     return null;
@@ -118,6 +127,12 @@ function classifyBovada(desc: string): keyof Omit<PropLine, "books" | "anytimeTd
   if (d.includes("passing") && d.includes("rushing")) return null;
   if (d.includes("rushing") && d.includes("receiving")) return null;
   if (d.includes("passing") && d.includes("receiving")) return null;
+  if (
+    (d.includes("2+") || d.includes("2 or more") || d.includes("two or more") || d.includes("two+")) &&
+    (d.includes("touchdown") || d.includes(" td"))
+  ) {
+    return "twoPlus";
+  }
   if (d.includes("anytime touchdown")) return "atd";
   if (d.includes("passing yards")) return "passYds";
   if (d.includes("passing touchdown")) return "passTd";
@@ -200,7 +215,7 @@ function parseBovada(data: unknown, byName: Map<string, PlayerProps>, byNameTeam
         const kind = classifyBovada(desc);
         if (!kind) continue;
 
-        if (kind === "atd") {
+        if (kind === "atd" || kind === "twoPlus") {
           for (const o of outs) {
             const tag = parsePlayerTag(o.description ?? "");
             if (!tag) continue;
@@ -208,7 +223,8 @@ function parseBovada(data: unknown, byName: Map<string, PlayerProps>, byNameTeam
             if (amer == null) continue;
             const row = ensure(byName, byNameTeam, tag.name, tag.team);
             const p = americanToProb(amer);
-            setAtd(row, p, "Vegas");
+            if (kind === "twoPlus") setTwoPlus(row, p, "Vegas");
+            else setAtd(row, p, "Vegas");
           }
           continue;
         }
@@ -352,6 +368,7 @@ function mergePropRows(a: PlayerProps, b: PlayerProps): PlayerProps {
     "recYds",
     "recTd",
     "anytimeTd",
+    "twoPlusTd",
   ];
   const line: PropLine = { books: [] };
   for (const k of keys) {
@@ -378,7 +395,7 @@ const FD_HEADERS = {
 
 const FD_PROP_TABS = ["passing-props", "rushing-props", "receiving-props", "td-scorer-props"] as const;
 
-const ESPN_DK_TYPES: Record<string, keyof Omit<PropLine, "books" | "anytimeTd"> | "atd"> = {
+const ESPN_DK_TYPES: Record<string, keyof Omit<PropLine, "books" | "anytimeTd" | "twoPlusTd"> | "atd"> = {
   "8": "passYds",
   "10": "passTd",
   "12": "rushYds",
@@ -387,7 +404,7 @@ const ESPN_DK_TYPES: Record<string, keyof Omit<PropLine, "books" | "anytimeTd"> 
   "15": "interceptions",
 };
 
-function classifyFdMarket(marketType: string, marketName: string): keyof Omit<PropLine, "books" | "anytimeTd"> | "atd" | null {
+function classifyFdMarket(marketType: string, marketName: string): keyof Omit<PropLine, "books" | "anytimeTd" | "twoPlusTd"> | "atd" | "twoPlus" | null {
   const t = `${marketType} ${marketName}`.toLowerCase().replace(/[_-]+/g, " ");
   if (
     /\balt\b/.test(t) ||
@@ -402,14 +419,16 @@ function classifyFdMarket(marketType: string, marketName: string): keyof Omit<Pr
     t.includes("2nd half") ||
     t.includes("most passing") ||
     t.includes("either player") ||
-    t.includes("3+") ||
-    t.includes("2+")
+    t.includes("3+")
   ) {
     return null;
   }
   if (t.includes("passing") && t.includes("rushing")) return null;
   if (t.includes("rushing") && t.includes("receiving")) return null;
   if (t.includes("passing") && t.includes("receiving")) return null;
+  if ((t.includes("2+") || t.includes("2 or more") || t.includes("two or more")) && t.includes("touchdown")) {
+    return "twoPlus";
+  }
   if (t.includes("anytime") && t.includes("touchdown")) return "atd";
   if (t.includes("any time") && t.includes("touchdown")) return "atd";
   if (t.includes("passing yards") || t.includes("passing yds")) return "passYds";
@@ -439,13 +458,15 @@ function parseFanDuelPlayerMarkets(
     const kind = classifyFdMarket(m.marketType ?? "", m.marketName ?? "");
     if (!kind) continue;
     const runners = m.runners ?? [];
-    if (kind === "atd") {
+    if (kind === "atd" || kind === "twoPlus") {
       for (const r of runners) {
         const name = fdPlayerName(m.marketName ?? "", r.runnerName ?? "");
         const amer = r.winRunnerOdds?.americanDisplayOdds?.americanOddsInt ?? r.winRunnerOdds?.americanDisplayOdds?.americanOdds;
         if (!name || amer == null) continue;
         const p = americanToProb(Number(amer));
-        setAtd(ensure(byName, byNameTeam, name, ""), p, "FanDuel");
+        const row = ensure(byName, byNameTeam, name, "");
+        if (kind === "twoPlus") setTwoPlus(row, p, "FanDuel");
+        else setAtd(row, p, "FanDuel");
       }
       continue;
     }
@@ -512,7 +533,7 @@ function parseEspnDkPropBets(data: unknown, byEspnId: EspnPropIndex) {
     if (typeName.includes("plus") || typeName.includes("longest") || typeName.includes("first") || typeName.includes("last")) {
       continue;
     }
-    let kind: keyof Omit<PropLine, "books" | "anytimeTd"> | "atd" | null = ESPN_DK_TYPES[it.type?.id ?? ""] ?? null;
+    let kind: keyof Omit<PropLine, "books" | "anytimeTd" | "twoPlusTd"> | "atd" | null = ESPN_DK_TYPES[it.type?.id ?? ""] ?? null;
     if (!kind && typeName.includes("anytime") && typeName.includes("touchdown")) kind = "atd";
     if (!kind) continue;
     const espnId = athleteIdFromRef(it.athlete?.$ref);
