@@ -29,8 +29,8 @@ export function CheapImpactRack({
         <p className="text-faint text-[11px] tracking-wide uppercase">Pts / $1k · cheap tier</p>
       </div>
       <p className="text-muted-foreground mb-3 max-w-2xl text-sm">
-        Cheap salary, still useful in Classic as FLEX or the last skill slot — bang for the buck. Ranked by pts per
-        $1k inside the low-pay tier, not by raw projection.
+        Cheap salary, still useful in Classic as FLEX or the last skill slot — bang for the buck. One name at each
+        spot from the low-pay tier. Overlap with Best Value is OK.
       </p>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {groups.map((group) => (
