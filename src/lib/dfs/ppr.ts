@@ -1,4 +1,3 @@
-import { xTape, xTapeNudge } from "./x-tape";
 import type { Player } from "./types";
 
 export type PprGroup = "QB" | "RB" | "WR" | "TE" | "FLEX" | "DST";
@@ -7,7 +6,6 @@ export interface PprRow {
   player: Player;
   ppr: number;
   rank: number;
-  method: string;
   tape: string;
 }
 
@@ -30,13 +28,7 @@ function tdShare(p: Player): { rushTd: number; recTd: number; passTd: number } {
   return { rushTd, recTd, passTd };
 }
 
-/** Weekly PPR (no DK bonuses). Props first, then Yahoo / CBS / FantasyPros. */
-export function pprPoints(p: Player): number {
-  if (p.position === "DST") {
-    const w = p.week;
-    if (!w) return p.projection * 0.85;
-    return w.sacks * 1 + w.defInt * 2 + w.fumRec * 2 + w.defTd * 6 + dstPa(w.ptsAllowed);
-  }
+function skillPpr(p: Player): number {
   const rec = p.props?.receptions ?? p.week?.receptions ?? 0;
   const recYds = p.props?.recYds ?? p.week?.recYds ?? 0;
   const rushYds = p.props?.rushYds ?? p.week?.rushYds ?? 0;
@@ -65,15 +57,33 @@ function dstPa(pts: number): number {
   return -5;
 }
 
-function tapeFor(p: Player): string {
-  return xTape(p);
+function dstPpr(p: Player): number {
+  let s = p.projection;
+  const w = p.week;
+  if (w && (w.sacks || w.defInt || w.fumRec || w.ptsAllowed)) {
+    const fromWeek = w.sacks * 1 + w.defInt * 2 + w.fumRec * 2 + w.defTd * 6 + dstPa(w.ptsAllowed);
+    s = s * 0.65 + fromWeek * 0.35;
+  }
+  if (p.oppRank >= 24) s += 0.8;
+  else if (p.oppRank <= 8) s -= 0.8;
+  return s;
 }
 
-function methodFor(p: Player): string {
-  const sites = p.sources.filter((s) => s.kind === "site").map((s) => s.label.split(" (")[0]!);
-  if (p.rankingMethod === "props") return "Vegas props";
-  if (sites.length) return `${[...new Set(sites)].slice(0, 3).join(" · ")} + X`;
-  return "Yahoo · CBS · FP + X";
+/** Weekly PPR. Same blend as the slate (props when complete, else site consensus). */
+export function pprPoints(p: Player): number {
+  if (p.position === "DST") return dstPpr(p);
+  const built = skillPpr(p);
+  if (built >= 4) return 0.55 * built + 0.45 * p.projection;
+  return p.projection;
+}
+
+function tapeFor(p: Player): string {
+  if (p.itFactor) return "Smash spot";
+  if (p.oppRank >= 24) return "Soft matchup";
+  if (p.oppRank <= 7) return "Tough D";
+  if (p.rankingMethod === "props") return "Props posted";
+  if (p.anytimeTd != null && p.anytimeTd >= 0.4) return "ATD juice";
+  return "";
 }
 
 export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
@@ -87,13 +97,12 @@ export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
   const scored = pool
     .map((player) => ({
       player,
-      ppr: Math.round((pprPoints(player) + xTapeNudge(player)) * 10) / 10,
-      method: methodFor(player),
+      ppr: Math.round(pprPoints(player) * 10) / 10,
       tape: tapeFor(player),
       rank: 0,
     }))
     .filter((r) => r.ppr > 0 || r.player.position === "DST")
-    .sort((a, b) => b.ppr - a.ppr || b.player.salary - a.player.salary);
+    .sort((a, b) => b.player.projection - a.player.projection || b.ppr - a.ppr || b.player.salary - a.player.salary);
   return scored.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
