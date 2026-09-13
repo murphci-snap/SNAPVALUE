@@ -17,29 +17,29 @@ export function CheapImpactRack({
     player: data.players.find((x) => x.position === p && x.cheapImpact) ?? null,
   }));
 
-  if (!groups.length || groups.every((g) => !g.player)) return null;
+  if (!groups.length) return null;
 
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="display text-xl font-semibold">Under $4k</h2>
-        <p className="text-faint text-[11px] tracking-wide uppercase">One dart · RB / WR / TE</p>
+        <h2 className="display text-xl font-semibold">Bargain bin</h2>
+        <p className="text-faint text-[11px] tracking-wide uppercase">Bang for the buck</p>
       </div>
       <p className="text-muted-foreground mb-3 max-w-2xl text-sm">
-        One cheap skill player at each spot who can still swing a Classic lineup — FLEX or the last RB/WR/TE slot
-        without breaking the cap.
+        Cheap salary, still useful in Classic as FLEX or the last skill slot — bang for the buck. One name at each
+        spot from the low-pay tier.
       </p>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {groups.map((group) => {
           const p = group.player;
           return (
             <div key={group.pos} className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
               <div className="mb-2 flex items-baseline justify-between">
                 <h3 className="display text-lg leading-none font-semibold">{group.pos}</h3>
-                <span className="text-value text-[10px] tracking-[0.16em] uppercase">Under $4k</span>
+                <span className="text-value text-[10px] tracking-[0.16em] uppercase">Bargain</span>
               </div>
               {!p ? (
-                <p className="text-muted-foreground text-xs">No cheap impact play this week</p>
+                <p className="text-muted-foreground text-xs">No cheap names on this slate.</p>
               ) : (
                 <button
                   type="button"
@@ -50,11 +50,11 @@ export function CheapImpactRack({
                     <span className="min-w-0 flex-1 truncate text-base font-medium">{p.name}</span>
                     <span className="font-mono text-sm tabular-nums">{formatPts(p.projection)}</span>
                   </span>
-                  <span className="text-muted-foreground mt-0.5 text-[11px]">
-                    {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)}
+                  <span className="text-muted-foreground mt-0.5 text-xs">
+                    {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)} · {p.value.toFixed(2)}x
                   </span>
                   {p.cheapImpactWhy && (
-                    <span className="text-ink mt-2 text-[11px] leading-snug">{p.cheapImpactWhy}</span>
+                    <span className="text-ink mt-2 text-xs leading-snug">{p.cheapImpactWhy}</span>
                   )}
                 </button>
               )}

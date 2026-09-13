@@ -185,7 +185,7 @@ export function LineupStudio({
       <p className="text-faint flex items-center gap-1.5 text-[11px]">
         <Sparkles className="size-3" />
         {contest === "milly"
-          ? "GPP build: stacks, bring-backs, and under-$4k darts. Not advice."
+          ? "GPP build: stacks, bring-backs, and bargain-bin darts. Not advice."
           : contest === "small"
             ? "Small-field build: floor first, spend the cap. Not advice."
             : "Single-entry build: one core plus a leverage piece. Not advice."}
