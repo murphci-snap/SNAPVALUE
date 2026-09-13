@@ -69,7 +69,7 @@ export function PlayerBoard({
     () =>
       valueRackPos.map((p) => ({
         pos: p,
-        players: data.players
+        players: [...data.players]
           .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false)
           .sort((a, b) => b.value - a.value || a.valueRank - b.valueRank)
           .slice(0, 4),
