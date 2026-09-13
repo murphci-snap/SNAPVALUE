@@ -14,10 +14,7 @@ export function CheapImpactRack({
   const positions = pos === "ALL" ? CHEAP_IMPACT_POS : CHEAP_IMPACT_POS.filter((p) => p === pos);
   const groups = positions.map((p) => ({
     pos: p,
-    players: data.players
-      .filter((x) => x.position === p && x.cheapImpact)
-      .sort((a, b) => b.value - a.value || a.salary - b.salary)
-      .slice(0, BARGAIN_TAKE),
+    players: data.players.filter((x) => x.position === p && x.cheapImpact).slice(0, BARGAIN_TAKE),
   }));
 
   if (!groups.length || groups.every((g) => !g.players.length)) return null;
