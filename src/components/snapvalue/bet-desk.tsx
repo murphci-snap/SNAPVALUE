@@ -202,12 +202,15 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
       <section>
         <h2 className="display text-2xl font-semibold">Two-player 2+ TD</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Two legs, two games. Each player 2 or more TDs. 0.25u. Not a same-game parlay.
+          Two legs, two games. 2+ TDs when the model supports it, otherwise mix an ATD. {desk.multiTdParlay?.unit ?? "0.25u"}.
+          Not a same-game parlay.
         </p>
         {desk.multiTdParlay ? (
           <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">2-leg 2+ TD · 0.25u</p>
+              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
+                Multi-TD parlay · {desk.multiTdParlay.unit ?? "0.25u"}
+              </p>
               <p className="display text-3xl leading-none font-semibold">
                 {formatAmerican(desk.multiTdParlay.combinedAmerican)}
                 <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
@@ -218,7 +221,9 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
             <ol className="mt-4 grid gap-3 md:grid-cols-2">
               {desk.multiTdParlay.legs.map((leg, i) => (
                 <li key={leg.name} className="rounded-lg bg-secondary px-3 py-3">
-                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">Leg {i + 1} · 2+ TDs</p>
+                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">
+                    Leg {i + 1} · {leg.marketLabel ?? (leg.kind === "atd" ? "ATD" : "2+ TD")}
+                  </p>
                   <p className="display text-2xl leading-none font-semibold">{leg.name}</p>
                   <p className="text-muted-foreground mt-1 font-mono text-sm">
                     {formatAmerican(leg.american)} · {leg.team} vs {leg.opponent}
