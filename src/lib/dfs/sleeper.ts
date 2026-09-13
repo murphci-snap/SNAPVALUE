@@ -2,7 +2,8 @@ import type { Game, Player, Position } from "./types";
 import { ordinal } from "@/lib/utils";
 
 const CHEAP: Position[] = ["QB", "RB", "WR", "TE"];
-const SOFT: Record<Position, number> = { QB: 5500, RB: 5000, WR: 5000, TE: 5000, DST: 3000 };
+const SOFT: Record<Position, number> = { QB: 5500, RB: 5200, WR: 5200, TE: 5000, DST: 3000 };
+const TAKE = 3;
 
 function gameOf(player: Player, games: Game[]): Game | undefined {
   return games.find((x) => x.homeAbbr === player.team || x.awayAbbr === player.team);
@@ -21,35 +22,40 @@ function available(p: Player): boolean {
   return true;
 }
 
-function cheapScore(p: Player, games: Game[]): number {
-  let s = p.value * 3.4 + p.projection * 0.85;
-  const cap = SOFT[p.position] ?? 5000;
-  if (p.salary <= cap - 1500) s += 2.4;
-  else if (p.salary <= cap) s += 1.2;
-  else s -= (p.salary - cap) / 1800;
-  const g = gameOf(p, games);
-  const imp = implied(p, games);
-  if (p.oppRank >= 24) s += 2.8;
-  else if (p.oppRank >= 20) s += 1.6;
-  else if (p.oppRank <= 8) s -= 1.4;
-  if (p.anytimeTd != null && p.anytimeTd >= 0.28) s += 2.4;
-  else if (p.anytimeTd != null && p.anytimeTd >= 0.18) s += 1.2;
-  if (p.props?.recYds && p.props.recYds >= 45) s += 1.5;
-  if (p.props?.rushYds && p.props.rushYds >= 40) s += 1.5;
-  if (imp != null && imp >= 24) s += 1.1;
-  if (g?.total != null && g.total >= 47) s += 0.8;
-  if (p.salary <= 3500 && p.projection >= 8) s += 1.2;
-  return s;
+function percentileCutoff(salaries: number[], p = 0.42): number {
+  if (!salaries.length) return SOFT.RB;
+  const s = [...salaries].sort((a, b) => a - b);
+  const i = Math.min(s.length - 1, Math.max(0, Math.floor((s.length - 1) * p)));
+  return s[i] ?? s[s.length - 1]!;
 }
 
 function poolFor(players: Player[], pos: Position): Player[] {
   const eligible = players.filter((p) => p.position === pos && available(p));
   if (!eligible.length) return [];
-  const cap = SOFT[pos] ?? 5000;
-  const under = eligible.filter((p) => p.salary <= cap);
-  if (under.length) return under;
+  const cap = Math.max(SOFT[pos] ?? 5000, percentileCutoff(eligible.map((p) => p.salary)));
+  let pool = eligible.filter((p) => p.salary <= cap);
+  const floor = pos === "TE" ? 4 : pos === "QB" ? 8 : 5;
+  const withPts = pool.filter((p) => p.projection >= floor);
+  if (withPts.length >= TAKE) pool = withPts;
+  if (pool.length >= TAKE) return pool;
   const byPay = [...eligible].sort((a, b) => a.salary - b.salary || b.value - a.value);
-  return byPay.slice(0, Math.min(10, byPay.length));
+  return byPay.slice(0, Math.max(TAKE, Math.min(12, byPay.length)));
+}
+
+function cheapScore(p: Player, games: Game[]): number {
+  let s = p.value * 5.2;
+  const cap = SOFT[p.position] ?? 5000;
+  if (p.salary <= cap - 1200) s += 0.35;
+  else if (p.salary > cap) s -= (p.salary - cap) / 2500;
+  if (p.oppRank >= 24) s += 0.45;
+  else if (p.oppRank >= 20) s += 0.2;
+  else if (p.oppRank <= 8) s -= 0.35;
+  if (p.anytimeTd != null && p.anytimeTd >= 0.22) s += 0.3;
+  const g = gameOf(p, games);
+  const imp = implied(p, games);
+  if (imp != null && imp >= 24) s += 0.15;
+  if (g?.total != null && g.total >= 47) s += 0.12;
+  return s;
 }
 
 function why(p: Player, games: Game[]): string {
@@ -75,12 +81,13 @@ export function markCheapImpact(players: Player[], games: Game[]) {
     if (!pool.length) continue;
     const ranked = pool
       .map((p) => ({ p, s: cheapScore(p, games) }))
-      .sort((a, b) => b.s - a.s || b.p.value - a.p.value || a.p.salary - b.p.salary);
-    const pick = ranked[0];
-    if (!pick) continue;
-    pick.p.cheapImpact = true;
-    pick.p.cheapImpactWhy = why(pick.p, games);
+      .sort((a, b) => b.p.value - a.p.value || b.s - a.s || a.p.salary - b.p.salary);
+    for (const pick of ranked.slice(0, TAKE)) {
+      pick.p.cheapImpact = true;
+      pick.p.cheapImpactWhy = why(pick.p, games);
+    }
   }
 }
 
 export const CHEAP_IMPACT_POS: Position[] = ["QB", "RB", "WR", "TE"];
+export const BARGAIN_TAKE = TAKE;
