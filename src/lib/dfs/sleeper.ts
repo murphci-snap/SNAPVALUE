@@ -1,19 +1,8 @@
-import type { Game, Player, Position } from "./types";
-import { ordinal } from "@/lib/utils";
+import type { Player, Position } from "./types";
 
 const CHEAP: Position[] = ["QB", "RB", "WR", "TE"];
 const SOFT: Record<Position, number> = { QB: 5500, RB: 5200, WR: 5200, TE: 5000, DST: 3000 };
 const TAKE = 3;
-
-function gameOf(player: Player, games: Game[]): Game | undefined {
-  return games.find((x) => x.homeAbbr === player.team || x.awayAbbr === player.team);
-}
-
-function implied(player: Player, games: Game[]): number | null {
-  const g = gameOf(player, games);
-  if (!g) return null;
-  return player.home ? g.homeImplied : g.awayImplied;
-}
 
 function available(p: Player): boolean {
   if (p.salary <= 0) return false;
@@ -42,36 +31,11 @@ function poolFor(players: Player[], pos: Position): Player[] {
   return byPay.slice(0, Math.max(TAKE, Math.min(12, byPay.length)));
 }
 
-function cheapScore(p: Player, games: Game[]): number {
-  let s = p.value * 5.2;
-  const cap = SOFT[p.position] ?? 5000;
-  if (p.salary <= cap - 1200) s += 0.35;
-  else if (p.salary > cap) s -= (p.salary - cap) / 2500;
-  if (p.oppRank >= 24) s += 0.45;
-  else if (p.oppRank >= 20) s += 0.2;
-  else if (p.oppRank <= 8) s -= 0.35;
-  if (p.anytimeTd != null && p.anytimeTd >= 0.22) s += 0.3;
-  const g = gameOf(p, games);
-  const imp = implied(p, games);
-  if (imp != null && imp >= 24) s += 0.15;
-  if (g?.total != null && g.total >= 47) s += 0.12;
-  return s;
+function why(p: Player): string {
+  return `${p.value.toFixed(2)} pts/$1k · $${(p.salary / 1000).toFixed(1)}k · FLEX / last skill slot`;
 }
 
-function why(p: Player, games: Game[]): string {
-  const bits: string[] = [`${p.value.toFixed(2)} pts/$1k`];
-  if (p.oppRank >= 22) bits.push(`${ordinal(p.oppRank)} vs ${p.position}`);
-  if (p.anytimeTd != null && p.anytimeTd >= 0.18) bits.push(`${Math.round(p.anytimeTd * 100)}% ATD`);
-  if (p.position === "QB" && p.props?.passYds) bits.push(`${p.props.passYds.toFixed(0)} pass yds`);
-  if (p.props?.recYds) bits.push(`${p.props.recYds.toFixed(0)} rec yds`);
-  if (p.props?.rushYds) bits.push(`${p.props.rushYds.toFixed(0)} rush yds`);
-  const g = gameOf(p, games);
-  if (g?.total != null && g.total >= 47) bits.push(`${g.total.toFixed(1)} total`);
-  bits.push("FLEX / last skill slot");
-  return bits.slice(0, 4).join(" · ");
-}
-
-export function markCheapImpact(players: Player[], games: Game[]) {
+export function markCheapImpact(players: Player[]) {
   for (const p of players) {
     p.cheapImpact = false;
     p.cheapImpactWhy = null;
@@ -79,12 +43,10 @@ export function markCheapImpact(players: Player[], games: Game[]) {
   for (const pos of CHEAP) {
     const pool = poolFor(players, pos);
     if (!pool.length) continue;
-    const ranked = pool
-      .map((p) => ({ p, s: cheapScore(p, games) }))
-      .sort((a, b) => b.p.value - a.p.value || b.s - a.s || a.p.salary - b.p.salary);
-    for (const pick of ranked.slice(0, TAKE)) {
-      pick.p.cheapImpact = true;
-      pick.p.cheapImpactWhy = why(pick.p, games);
+    const ranked = [...pool].sort((a, b) => b.value - a.value || a.salary - b.salary || b.projection - a.projection);
+    for (const p of ranked.slice(0, TAKE)) {
+      p.cheapImpact = true;
+      p.cheapImpactWhy = why(p);
     }
   }
 }
