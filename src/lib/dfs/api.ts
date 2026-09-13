@@ -22,7 +22,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 19;
+const CACHE_VER = 20;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -167,6 +167,47 @@ function showdownGameName(g: DkGroup): string {
   return raw || "Showdown";
 }
 
+/** ET weekday 0=Sun … 6=Sat, hour 0–23. */
+function etKickoff(iso: string): { weekday: number; hour: number } | null {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(new Date(t));
+  const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const hour = Number.parseInt(parts.find((p) => p.type === "hour")?.value ?? "", 10);
+  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const weekday = map[wd];
+  if (weekday == null || !Number.isFinite(hour)) return null;
+  return { weekday, hour };
+}
+
+function primetimeWindow(iso: string, blob: string): "TNF" | "SNF" | "MNF" | "Sat" | "Fri" | null {
+  const et = etKickoff(iso);
+  if (et) {
+    if (et.weekday === 4 && et.hour >= 19) return "TNF";
+    if (et.weekday === 5 && et.hour >= 19) return "Fri";
+    if (et.weekday === 6 && et.hour >= 19) return "Sat";
+    if (et.weekday === 0 && et.hour >= 19) return "SNF";
+    if (et.weekday === 1 && et.hour >= 19) return "MNF";
+    return null;
+  }
+  const t = blob.toLowerCase();
+  if (/\bearly\b|\bafternoon\b|\bmorning\b|\b1pm\b|\b4pm\b/.test(t) && !/\bnight\b|\bprime|\bsnf\b|\bmnf\b|\btnf\b/.test(t)) {
+    return null;
+  }
+  if (/\btnf\b|thursday\s*night|thu\s*night/.test(t)) return "TNF";
+  if (/\bsnf\b|sunday\s*night|sun\s*night/.test(t)) return "SNF";
+  if (/\bmnf\b|monday\s*night|mon\s*night/.test(t)) return "MNF";
+  if (/saturday\s*night|sat\s*night/.test(t)) return "Sat";
+  if (/friday\s*night|fri\s*night/.test(t)) return "Fri";
+  if (/\bprime/.test(t)) return "SNF";
+  return null;
+}
+
 function pickShowdownSlates(groups: DkGroup[]): SlateOption[] {
   const now = Date.now();
   const weekMs = 8 * 24 * 60 * 60 * 1000;
@@ -182,10 +223,14 @@ function pickShowdownSlates(groups: DkGroup[]): SlateOption[] {
     const games = g.games?.length ?? 0;
     if (games > 1) continue;
     const name = showdownGameName(g);
+    const blob = `${g.startTimeSuffix ?? ""} ${name}`;
+    const window = primetimeWindow(g.minStartTime, blob);
+    if (!window) continue;
+    const tag = window === "Sat" ? "Sat night" : window === "Fri" ? "Fri night" : window;
     out.push({
       draftGroupId: g.draftGroupId,
-      label: `Showdown · ${name}`,
-      suffix: name,
+      label: `Showdown · ${tag} · ${name}`,
+      suffix: `${tag} · ${name}`,
       startTime: g.minStartTime,
       gameCount: games || 1,
       format: "showdown",
