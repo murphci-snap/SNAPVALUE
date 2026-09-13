@@ -69,6 +69,7 @@ export function PlayerBoard({
     pos: p,
     players: data.players
       .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false)
+      .sort((a, b) => b.value - a.value || a.valueRank - b.valueRank || b.projection - a.projection)
       .slice(0, 4),
   }));
 
@@ -164,7 +165,10 @@ export function PlayerBoard({
                         {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)}
                       </span>
                     </span>
-                    <span className="text-value font-mono text-sm tabular-nums">{p.value.toFixed(2)}</span>
+                    <span className="flex shrink-0 flex-col items-end">
+                      <span className="text-value font-mono text-sm tabular-nums">{p.value.toFixed(2)}</span>
+                      <span className="text-faint font-mono text-[11px] tabular-nums">{formatPts(p.projection)}</span>
+                    </span>
                   </button>
                 </li>
               ))}

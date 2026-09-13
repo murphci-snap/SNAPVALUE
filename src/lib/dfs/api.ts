@@ -21,7 +21,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 9;
+const CACHE_VER = 10;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -434,8 +434,9 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       if (propProjection != null) {
         rankingMethod = "props";
         if (consensusProjection != null) {
-          const w = propComplete ? 0.95 : 0.7;
+          const w = propComplete ? 0.95 : 0.4;
           projection = w * propProjection + (1 - w) * consensusProjection;
+          if (!propComplete) rankingMethod = "consensus";
         } else {
           projection = propProjection;
         }
@@ -535,14 +536,19 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     }
 
     for (const pos of POSITIONS) {
-      const group = players.filter((p) => p.position === pos && p.salary >= 3000 && p.projection >= 6 && p.isStarter);
-      const sorted = [...group].sort((a, b) => b.value - a.value);
+      const floor = pos === "DST" ? 4 : pos === "TE" ? 5.5 : 6;
+      const group = players.filter(
+        (p) => p.position === pos && p.isStarter && (pos === "DST" || p.salary >= 3000) && p.projection >= floor,
+      );
+      const sorted = [...group].sort((a, b) => b.value - a.value || b.projection - a.projection);
       sorted.forEach((p, i) => {
         p.valueRank = i + 1;
       });
-      const cutoff = Math.max(3, Math.ceil(sorted.length * 0.18));
-      for (const p of sorted.slice(0, cutoff)) {
-        if (p.value >= 1.8) p.isValuePlay = true;
+      if (!sorted.length) continue;
+      const median = sorted[Math.floor(sorted.length / 2)]!.value;
+      const cap = Math.max(3, Math.ceil(sorted.length * 0.18));
+      for (const p of sorted.slice(0, cap)) {
+        if (p.valueRank <= 3 || p.value >= median + 0.15) p.isValuePlay = true;
       }
     }
 
