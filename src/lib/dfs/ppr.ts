@@ -28,6 +28,7 @@ function tdShare(p: Player): { rushTd: number; recTd: number; passTd: number } {
   return { rushTd, recTd, passTd };
 }
 
+/** Full-PPR from this week's usage. No DK yardage bonuses. */
 function skillPpr(p: Player): number {
   const rec = p.props?.receptions ?? p.week?.receptions ?? 0;
   const recYds = p.props?.recYds ?? p.week?.recYds ?? 0;
@@ -58,31 +59,29 @@ function dstPa(pts: number): number {
 }
 
 function dstPpr(p: Player): number {
-  let s = p.projection;
   const w = p.week;
-  if (w && (w.sacks || w.defInt || w.fumRec || w.ptsAllowed)) {
-    const fromWeek = w.sacks * 1 + w.defInt * 2 + w.fumRec * 2 + w.defTd * 6 + dstPa(w.ptsAllowed);
-    s = s * 0.65 + fromWeek * 0.35;
+  if (w && (w.sacks || w.defInt || w.fumRec || w.defTd || w.ptsAllowed)) {
+    return w.sacks * 1 + w.defInt * 2 + w.fumRec * 2 + w.defTd * 6 + dstPa(w.ptsAllowed);
   }
-  if (p.oppRank >= 24) s += 0.8;
-  else if (p.oppRank <= 8) s -= 0.8;
-  return s;
+  if (w && w.espnPpr > 0) return w.espnPpr;
+  if (p.oppRank >= 24) return 7;
+  if (p.oppRank <= 8) return 4;
+  return 5.5;
 }
 
-/** Weekly PPR. Same blend as the slate (props when complete, else site consensus). */
+/** This week's full-PPR only. Never Classic DK `projection`. */
 export function pprPoints(p: Player): number {
   if (p.position === "DST") return dstPpr(p);
   const built = skillPpr(p);
-  if (built >= 4) return 0.55 * built + 0.45 * p.projection;
-  return p.projection;
+  if (built >= 2) return built;
+  const weekly = p.week?.espnPpr ?? 0;
+  return weekly > 1 ? weekly : 0;
 }
 
 function tapeFor(p: Player): string {
-  if (p.itFactor) return "Smash spot";
-  if (p.oppRank >= 24) return "Soft matchup";
-  if (p.oppRank <= 7) return "Tough D";
-  if (p.rankingMethod === "props") return "Props posted";
-  if (p.anytimeTd != null && p.anytimeTd >= 0.4) return "ATD juice";
+  if (p.rankingMethod === "props") return "Props-backed";
+  if (p.oppRank >= 24) return "Favorable matchup";
+  if (p.oppRank <= 7) return "Tough matchup";
   return "";
 }
 
@@ -102,7 +101,7 @@ export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
       rank: 0,
     }))
     .filter((r) => r.ppr > 0 || r.player.position === "DST")
-    .sort((a, b) => b.player.projection - a.player.projection || b.ppr - a.ppr || b.player.salary - a.player.salary);
+    .sort((a, b) => b.ppr - a.ppr || a.player.name.localeCompare(b.player.name));
   return scored.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 

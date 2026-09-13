@@ -2,23 +2,22 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { PPR_GROUPS, rankPpr, type PprGroup } from "@/lib/dfs/ppr";
 import type { SlateData } from "@/lib/dfs/types";
-import { cn, formatPts, formatSalary } from "@/lib/utils";
+import { cn, formatPts } from "@/lib/utils";
 
 export function PprBoard({ data }: { data: SlateData }) {
   const [group, setGroup] = useState<PprGroup>("FLEX");
   const rows = useMemo(() => rankPpr(data.players, group), [data.players, group]);
   const shown = rows.slice(0, group === "FLEX" ? 48 : group === "QB" || group === "DST" ? 32 : 40);
+  const week = data.week || 1;
 
   return (
     <section className="flex min-w-0 flex-col gap-4">
       <header>
-        <p className="display text-faint text-xs tracking-[0.18em] uppercase">Season-long · not DFS</p>
+        <p className="display text-faint text-xs tracking-[0.18em] uppercase">Weekly full-PPR · this week</p>
         <h2 className="display text-2xl leading-none font-semibold">Weekly PPR ranks</h2>
         <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-          Full-PPR for this week. Tape is a short model read — not a live scrape.
-        </p>
-        <p className="text-faint mt-1 text-[11px] tracking-wide uppercase">
-          Ranked by props when posted · else Yahoo / CBS / FantasyPros
+          Regular weekly PPR for Week {week} only — not daily fantasy, not rest-of-season. Ranked by this week's
+          usage: props when posted, else Yahoo / CBS / FantasyPros.
         </p>
       </header>
 
@@ -58,19 +57,13 @@ export function PprBoard({ data }: { data: SlateData }) {
                     <div className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate font-medium">{p.name}</span>
                       {group === "FLEX" && <Badge variant="outline">{p.position}</Badge>}
-                      {p.itFactor && <Badge variant="it">IT</Badge>}
                     </div>
                     <p className="text-muted-foreground text-[11px]">
                       {dst ? (
-                        <>
-                          vs {p.opponent}
-                          {p.salary ? ` · ${formatSalary(p.salary)}` : null}
-                        </>
+                        <>vs {p.opponent}</>
                       ) : (
                         <>
                           {p.team} {p.home ? "vs" : "@"} {p.opponent}
-                          {p.salary ? ` · ${formatSalary(p.salary)}` : null}
-                          {p.value ? ` · Val ${p.value.toFixed(2)}` : null}
                         </>
                       )}
                     </p>
