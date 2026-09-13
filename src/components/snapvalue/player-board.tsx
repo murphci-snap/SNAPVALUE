@@ -15,6 +15,25 @@ type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name";
 
 const POS_FILTER: Array<Position | "ALL"> = ["ALL", ...POSITIONS];
 
+const VALUE_PROJ_FLOOR: Record<Position, number> = { QB: 6, RB: 6, WR: 6, TE: 5.5, DST: 4 };
+
+function byPtsPerDollar(a: Player, b: Player): number {
+  return b.value - a.value || a.salary - b.salary || b.projection - a.projection;
+}
+
+function valueRackPlayers(players: Player[], pos: Position): Player[] {
+  return players
+    .filter((x) => {
+      if (x.position !== pos) return false;
+      if (x.isStarter === false) return false;
+      if (pos !== "DST" && x.salary < 3000) return false;
+      if (x.projection < (VALUE_PROJ_FLOOR[pos] ?? 6)) return false;
+      return true;
+    })
+    .sort(byPtsPerDollar)
+    .slice(0, 4);
+}
+
 export function PlayerBoard({
   data,
   locks,
@@ -67,10 +86,7 @@ export function PlayerBoard({
   const valueRackPos = pos === "ALL" ? POSITIONS : [pos];
   const rack = valueRackPos.map((p) => ({
     pos: p,
-    players: data.players
-      .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false)
-      .sort((a, b) => b.value - a.value || a.valueRank - b.valueRank || b.projection - a.projection)
-      .slice(0, 4),
+    players: valueRackPlayers(data.players, p),
   }));
 
   function toggleSort(key: SortKey) {
@@ -138,7 +154,7 @@ export function PlayerBoard({
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-2">
           <h2 className="display text-xl font-semibold">Best value</h2>
-          <p className="text-faint text-[11px] tracking-wide uppercase">Pts / $1k salary</p>
+          <p className="text-value text-[11px] tracking-wide uppercase">Sorted by pts / $1k</p>
         </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {rack.map((group) => (
