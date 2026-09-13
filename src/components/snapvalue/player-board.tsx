@@ -15,28 +15,6 @@ type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name";
 
 const POS_FILTER: Array<Position | "ALL"> = ["ALL", ...POSITIONS];
 
-const VALUE_PROJ_FLOOR: Record<Position, number> = { QB: 6, RB: 6, WR: 6, TE: 5.5, DST: 4 };
-
-function byValueRank(a: Player, b: Player): number {
-  const ra = a.valueRank > 0 ? a.valueRank : 999;
-  const rb = b.valueRank > 0 ? b.valueRank : 999;
-  if (ra !== rb) return ra - rb;
-  return b.value - a.value || a.salary - b.salary;
-}
-
-function valueRackPlayers(players: Player[], pos: Position): Player[] {
-  return [...players]
-    .filter((x) => {
-      if (x.position !== pos) return false;
-      if (x.isStarter === false) return false;
-      if (pos !== "DST" && x.salary < 3000) return false;
-      if (x.projection < (VALUE_PROJ_FLOOR[pos] ?? 6)) return false;
-      return true;
-    })
-    .sort(byValueRank)
-    .slice(0, 4);
-}
-
 export function PlayerBoard({
   data,
   locks,
@@ -91,7 +69,10 @@ export function PlayerBoard({
     () =>
       valueRackPos.map((p) => ({
         pos: p,
-        players: valueRackPlayers(data.players, p),
+        players: data.players
+          .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false)
+          .sort((a, b) => b.value - a.value || a.valueRank - b.valueRank)
+          .slice(0, 4),
       })),
     [data.players, pos],
   );
