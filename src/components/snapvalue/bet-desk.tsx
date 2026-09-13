@@ -58,6 +58,8 @@ function PropCard({ bet, kicker }: { bet: DeskBet; kicker: string }) {
     </li>
   );
 }
+
+export function BetDesk({ games, players }: { games: Game[]; players: Player[] }) {
   const desk = useMemo(() => buildWeeklyDesk(games, players), [games, players]);
 
   return (
