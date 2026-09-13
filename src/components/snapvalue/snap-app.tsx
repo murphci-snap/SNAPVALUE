@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { REFRESH_MS } from "@/lib/dfs/constants";
@@ -172,6 +172,31 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   );
 }
 
+function slateName(suffix: string): string {
+  const raw = suffix.replace(/[()]/g, "").trim() || "Main";
+  const key = raw.toLowerCase().replace(/\s+/g, " ");
+  const names: Record<string, string> = {
+    main: "Main",
+    early: "Early",
+    afternoon: "Afternoon",
+    primetime: "Primetime",
+    "prime time": "Primetime",
+    "sun-mon": "Sun–Mon",
+    "thu-mon": "Thu–Mon",
+    "thu-sun": "Thu–Sun",
+    "fri-mon": "Fri–Mon",
+    sun: "Sunday",
+    "sun only": "Sunday",
+    showdown: "Showdown",
+  };
+  return names[key] ?? raw.replace(/-/g, "–");
+}
+
+function formatCap(n: number): string {
+  if (n >= 1000) return `$${Math.round(n / 1000)}k`;
+  return `$${n}`;
+}
+
 function Header({
   data,
   tab,
@@ -215,7 +240,7 @@ function Header({
         </div>
       </div>
       <div className="border-border/80 sticky top-0 z-30 border-t bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-4 py-3 lg:px-6">
+      <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-4 pt-3 pb-2 lg:px-6">
         <p className="display text-lg leading-none font-semibold tracking-wide">SNAPVALUE</p>
         <span className="bg-secondary text-muted-foreground rounded-full px-3 py-1 font-mono text-xs">
           WK {data.week}
@@ -233,22 +258,44 @@ function Header({
           </Button>
         </div>
       </div>
-      <div className="mx-auto flex max-w-[1440px] gap-1.5 overflow-x-auto px-4 pb-3 lg:px-6">
-        {data.slates.map((s) => (
-          <button
-            key={s.draftGroupId}
-            type="button"
-            onClick={() => onSlate(s.draftGroupId)}
-            className={cn(
-              "h-10 shrink-0 rounded-full px-3 text-xs font-medium transition-colors duration-150",
-              s.draftGroupId === data.draftGroupId
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {s.suffix} · {s.gameCount}g
-          </button>
-        ))}
+      <div className="mx-auto max-w-[1440px] px-4 pb-3 lg:px-6">
+        <div className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:snap-none [&::-webkit-scrollbar]:hidden">
+          {data.slates.map((s) => {
+            const on = s.draftGroupId === data.draftGroupId;
+            return (
+              <button
+                key={s.draftGroupId}
+                type="button"
+                onClick={() => onSlate(s.draftGroupId)}
+                aria-pressed={on}
+                className={cn(
+                  "flex min-h-11 min-w-[9.25rem] shrink-0 snap-start flex-col items-start justify-center rounded-lg px-3 py-2 text-left transition-colors duration-150",
+                  on
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  {on ? <Check className="size-3.5 shrink-0" aria-hidden /> : null}
+                  <span className="display text-sm leading-none font-semibold tracking-wide">
+                    {slateName(s.suffix)}
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    "mt-1 font-mono text-[11px] tabular-nums",
+                    on ? "text-primary-foreground/70" : "text-faint",
+                  )}
+                >
+                  {s.gameCount} {s.gameCount === 1 ? "game" : "games"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-faint mt-2 font-mono text-[11px]">
+          DraftKings Classic · {formatCap(data.salaryCap)}
+        </p>
       </div>
       </div>
     </header>
