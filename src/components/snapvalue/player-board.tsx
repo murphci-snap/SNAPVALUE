@@ -13,8 +13,6 @@ import { ItFactorRack } from "./it-factor-rack";
 
 type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name";
 
-const POS_FILTER: Array<Position | "ALL"> = ["ALL", ...POSITIONS];
-
 export function PlayerBoard({
   data,
   locks,
@@ -38,9 +36,18 @@ export function PlayerBoard({
   const [tableReady, setTableReady] = useState(false);
   useEffect(() => setTableReady(true), []);
 
+  const boardPlayers = useMemo(
+    () => data.players.filter((p) => p.showdownRole !== "CPT"),
+    [data.players],
+  );
+  const posList = useMemo<Position[]>(
+    () => (boardPlayers.some((p) => p.position === "K") ? [...POSITIONS, "K"] : [...POSITIONS]),
+    [boardPlayers],
+  );
+  const POS_FILTER: Array<Position | "ALL"> = ["ALL", ...posList];
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    let list = data.players;
+    let list = boardPlayers;
     if (pos !== "ALL") list = list.filter((p) => p.position === pos);
     if (valuesOnly) list = list.filter((p) => p.isValuePlay);
     if (itOnly) list = list.filter((p) => p.itFactor);
@@ -62,19 +69,19 @@ export function PlayerBoard({
       if (sort === "name") return mul * a.name.localeCompare(b.name);
       return mul * ((a[sort] as number) - (b[sort] as number));
     });
-  }, [data.players, pos, q, sort, dir, valuesOnly, itOnly]);
+  }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly]);
 
-  const valueRackPos = pos === "ALL" ? POSITIONS : [pos];
+  const valueRackPos = pos === "ALL" ? posList : [pos];
   const rack = useMemo(
     () =>
       valueRackPos.map((p) => ({
         pos: p,
-        players: [...data.players]
+        players: [...boardPlayers]
           .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false)
           .sort((a, b) => b.value - a.value || a.valueRank - b.valueRank)
           .slice(0, 4),
       })),
-    [data.players, pos],
+    [boardPlayers, pos, posList],
   );
 
   function toggleSort(key: SortKey) {

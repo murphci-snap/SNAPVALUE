@@ -3,6 +3,7 @@ import type { Position, RosterSlot } from "./types";
 export const REFRESH_MS = 2 * 60 * 60 * 1000;
 export const SALARY_CAP = 50_000;
 export const POSITIONS: Position[] = ["QB", "RB", "WR", "TE", "DST"];
+export const SHOWDOWN_POSITIONS: Position[] = ["QB", "RB", "WR", "TE", "DST", "K"];
 
 export const ROSTER: { slot: RosterSlot; positions: Position[] }[] = [
   { slot: "QB", positions: ["QB"] },
@@ -26,13 +27,29 @@ export const SLOT_LABEL: Record<RosterSlot, string> = {
   TE: "TE",
   FLEX: "FLEX",
   DST: "DST",
+  CPT: "CPT",
+  UTIL: "UTIL",
+  UTIL2: "UTIL",
+  UTIL3: "UTIL",
+  UTIL4: "UTIL",
+  UTIL5: "UTIL",
 };
+
+export const SHOWDOWN_ROSTER: { slot: RosterSlot; positions: Position[] }[] = [
+  { slot: "CPT", positions: SHOWDOWN_POSITIONS },
+  { slot: "UTIL", positions: SHOWDOWN_POSITIONS },
+  { slot: "UTIL2", positions: SHOWDOWN_POSITIONS },
+  { slot: "UTIL3", positions: SHOWDOWN_POSITIONS },
+  { slot: "UTIL4", positions: SHOWDOWN_POSITIONS },
+  { slot: "UTIL5", positions: SHOWDOWN_POSITIONS },
+];
 
 export const ESPN_POS: Record<number, Position | undefined> = {
   1: "QB",
   2: "RB",
   3: "WR",
   4: "TE",
+  5: "K",
   16: "DST",
 };
 

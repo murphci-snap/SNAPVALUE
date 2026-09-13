@@ -18,6 +18,7 @@ export function paBonus(pointsAllowed: number): number {
 }
 
 export function dkFromWeek(p: WeekProjection, position: Position): number {
+  if (position === "K") return Math.max(p.espnPpr, 7);
   if (position === "DST") {
     return (
       p.sacks * 1 +

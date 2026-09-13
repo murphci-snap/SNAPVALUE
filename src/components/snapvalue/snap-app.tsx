@@ -160,6 +160,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
               locks={locks}
               excludes={excludes}
               onToggleLock={toggleLock}
+              format={data.format ?? "classic"}
             />
           )}
           {tab === "pools" && <PoolStudio games={data.games} week={data.week} />}
@@ -278,7 +279,7 @@ function Header({
                 <span className="flex items-center gap-1.5">
                   {on ? <Check className="size-3.5 shrink-0" aria-hidden /> : null}
                   <span className="display text-sm leading-none font-semibold tracking-wide">
-                    {slateName(s.suffix)}
+                    {s.format === "showdown" ? s.suffix : slateName(s.suffix)}
                   </span>
                 </span>
                 <span
@@ -294,7 +295,7 @@ function Header({
           })}
         </div>
         <p className="text-faint mt-2 font-mono text-[11px]">
-          DraftKings Classic · {formatCap(data.salaryCap)}
+          {data.format === "showdown" ? "DraftKings Showdown · CPT 1.5×" : "DraftKings Classic"} · {formatCap(data.salaryCap)}
         </p>
       </div>
       </div>

@@ -87,6 +87,7 @@ function tapeFor(p: Player): string {
 
 export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
   const pool = players.filter((p) => {
+    if (p.showdownRole === "CPT") return false;
     if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /out|ir|doubtful|suspended/i.test(p.injury ?? "")) {
       return false;
     }

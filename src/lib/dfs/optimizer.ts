@@ -1,8 +1,8 @@
 import { mulberry32 } from "@/lib/utils";
-import { ROSTER, SALARY_CAP, SLOT_LABEL } from "./constants";
-import type { Lineup, Player, Position, RosterSlot } from "./types";
+import { ROSTER, SALARY_CAP, SHOWDOWN_ROSTER, SLOT_LABEL } from "./constants";
+import type { Lineup, Player, Position, RosterSlot, SlateFormat } from "./types";
 
-export type ContestStyle = "single" | "milly" | "small";
+export type ContestStyle = "single" | "milly" | "small" | "doubleup";
 
 const FLEX_POS = new Set<Position>(["RB", "WR", "TE"]);
 
@@ -21,6 +21,10 @@ export const CONTEST_META: Record<
   small: {
     label: "≤30 entries",
     blurb: "Tiny field. Play the board: high floor, spend the cap, skip long-shot uniques.",
+  },
+  doubleup: {
+    label: "Double Up",
+    blurb: "Cash / 50-50. High floors, chalk, spend the cap. Almost no bargain darts or stacks.",
   },
 };
 
@@ -61,6 +65,11 @@ function remainingMin(
 function scorePlayer(style: ContestStyle, p: Player, rng: () => number, valueLean: boolean): number {
   const matchup = p.oppRank >= 20 ? 1.12 : p.oppRank <= 8 ? 0.88 : 1;
   const it = p.itFactor ? 1.14 : 1;
+  if (style === "doubleup") {
+    const sal = p.salary >= 6500 ? 1.22 : p.salary < 4200 ? 0.52 : 1;
+    const dart = p.cheapImpact ? 0.62 : 1;
+    return p.projection ** 1.95 * matchup * it * sal * dart * (0.94 + rng() * 0.08);
+  }
   if (style === "small") {
     const sal = p.salary >= 7000 ? 1.18 : p.salary < 4000 ? 0.78 : 1;
     return p.projection ** 1.72 * matchup * it * sal * (0.92 + rng() * 0.14);
@@ -81,16 +90,19 @@ export function generateLineups(
   players: Player[],
   count: number,
   seed: number,
-  opts?: { stackQb?: boolean; locks?: string[]; excludes?: string[]; contest?: ContestStyle },
+  opts?: { stackQb?: boolean; locks?: string[]; excludes?: string[]; contest?: ContestStyle; format?: SlateFormat },
 ): Lineup[] {
+  if (opts?.format === "showdown" || players.some((p) => p.showdownRole === "CPT")) {
+    return generateShowdownLineups(players, count, seed, opts);
+  }
   const stackQb = opts?.stackQb ?? true;
   const contest = opts?.contest ?? "single";
   const lockIds = new Set(opts?.locks ?? []);
   const exclude = new Set(opts?.excludes ?? []);
   const rng = mulberry32(seed);
 
-  const qbFloor = contest === "small" ? 12 : contest === "milly" ? 7 : 8;
-  const skillFloor = contest === "small" ? 6.5 : contest === "milly" ? 4 : 4.5;
+  const qbFloor = contest === "doubleup" ? 14 : contest === "small" ? 12 : contest === "milly" ? 7 : 8;
+  const skillFloor = contest === "doubleup" ? 8 : contest === "small" ? 6.5 : contest === "milly" ? 4 : 4.5;
 
   const pool = players.filter((p) => {
     if (exclude.has(p.id)) return false;
@@ -109,7 +121,7 @@ export function generateLineups(
   const results: Lineup[] = [];
   const seen = new Set<string>();
   let attempts = 0;
-  const valueRate = contest === "milly" ? 0.55 : contest === "small" ? 0.1 : 0.32;
+  const valueRate = contest === "milly" ? 0.55 : contest === "doubleup" ? 0.02 : contest === "small" ? 0.1 : 0.32;
 
   while (results.length < count && attempts < count * 48) {
     attempts++;
@@ -154,8 +166,8 @@ function buildOne(
   });
 
   let qb: Player | null = null;
-  const stackWr = contest === "milly" ? 0.86 : contest === "small" ? 0.42 : 0.7;
-  const stackFlex = contest === "milly" ? 0.48 : contest === "small" ? 0.12 : 0.32;
+  const stackWr = contest === "milly" ? 0.86 : contest === "doubleup" ? 0.18 : contest === "small" ? 0.42 : 0.7;
+  const stackFlex = contest === "milly" ? 0.48 : contest === "doubleup" ? 0.04 : contest === "small" ? 0.12 : 0.32;
 
   for (let i = 0; i < fillOrder.length; i++) {
     const slot = fillOrder[i]!;
@@ -210,7 +222,7 @@ function buildOne(
   if (salary > SALARY_CAP) return null;
   if (chosen.length !== 9) return null;
 
-  const swaps = contest === "small" ? 28 : contest === "milly" ? 14 : 18;
+  const swaps = contest === "doubleup" ? 34 : contest === "small" ? 28 : contest === "milly" ? 14 : 18;
   for (let k = 0; k < swaps; k++) {
     const idx = Math.floor(rng() * chosen.length);
     const cur = chosen[idx]!;
@@ -220,7 +232,7 @@ function buildOne(
       if (!spec.positions.includes(p.position)) return false;
       const newSalary = salary - cur.player.salary + p.salary;
       if (newSalary > SALARY_CAP) return false;
-      if (contest === "small") return p.projection > cur.player.projection + 0.25;
+      if (contest === "doubleup" || contest === "small") return p.projection > cur.player.projection + 0.25;
       if (contest === "milly") {
         return (
           p.projection > cur.player.projection + 0.6 ||
@@ -231,7 +243,7 @@ function buildOne(
       return p.projection > cur.player.projection + 0.4 || (opts.valueLean && p.value > cur.player.value + 0.15);
     });
     if (!alt.length) continue;
-    const next = weightedPick(alt, (p) => p.projection * (contest === "small" ? 1 : p.value), rng);
+    const next = weightedPick(alt, (p) => p.projection * (contest === "small" || contest === "doubleup" ? 1 : p.value), rng);
     if (!next || next.id === cur.player.id) continue;
     used.delete(cur.player.id);
     used.add(next.id);
@@ -263,6 +275,167 @@ function buildOne(
     remaining: SALARY_CAP - salary,
     stacks,
   };
+}
+
+function coreId(p: Player): string {
+  return p.id.replace(/:(CPT|FLEX)$/i, "");
+}
+
+export function generateShowdownLineups(
+  players: Player[],
+  count: number,
+  seed: number,
+  opts?: { locks?: string[]; excludes?: string[]; contest?: ContestStyle },
+): Lineup[] {
+  const contest = opts?.contest === "milly" ? "milly" : "doubleup";
+  const lockIds = new Set(opts?.locks ?? []);
+  const exclude = new Set(opts?.excludes ?? []);
+  const rng = mulberry32(seed);
+
+  let utilPool = players.filter((p) => {
+    if (exclude.has(p.id)) return false;
+    if (p.salary <= 0) return false;
+    if (p.showdownRole === "CPT") return false;
+    if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /^(out|ir|doubtful)/i.test(p.injury ?? "")) {
+      return lockIds.has(p.id);
+    }
+    return p.projection >= 3 || lockIds.has(p.id);
+  });
+  let cptPool = players.filter((p) => {
+    if (exclude.has(p.id)) return false;
+    if (p.showdownRole !== "CPT") return false;
+    if (p.salary <= 0) return false;
+    if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /^(out|ir|doubtful)/i.test(p.injury ?? "")) {
+      return lockIds.has(p.id);
+    }
+    return p.projection >= 5 || lockIds.has(p.id);
+  });
+  if (!cptPool.length) {
+    cptPool = utilPool.map((p) => ({
+      ...p,
+      id: `${coreId(p)}:CPT`,
+      salary: Math.round((p.salary * 1.5) / 100) * 100,
+      projection: Math.round(p.projection * 15) / 10,
+      showdownRole: "CPT" as const,
+    }));
+  }
+
+  const byId = new Map([...cptPool, ...utilPool].map((p) => [p.id, p]));
+  const results: Lineup[] = [];
+  const seen = new Set<string>();
+  let attempts = 0;
+
+  while (results.length < count && attempts < count * 60) {
+    attempts++;
+    const usedCore = new Set<string>();
+    const chosen: { slot: RosterSlot; player: Player }[] = [];
+    let salary = 0;
+
+    const lockedCpt = [...lockIds].map((id) => byId.get(id)).find((p) => p?.showdownRole === "CPT");
+    let cpt: Player | null = null;
+    if (lockedCpt && SALARY_CAP - lockedCpt.salary >= 0) cpt = lockedCpt;
+    else {
+      const chalk = contest === "doubleup";
+      cpt = weightedPick(cptPool, (p) => {
+        const floor = p.salary >= 9000 ? 1.2 : 1;
+        return chalk ? p.projection ** 2.1 * floor : p.projection ** 1.35 * (p.itFactor ? 1.2 : 1) * (0.6 + rng());
+      }, rng);
+    }
+    if (!cpt) continue;
+    usedCore.add(coreId(cpt));
+    salary += cpt.salary;
+    chosen.push({ slot: "CPT", player: cpt });
+
+    const utilSlots = SHOWDOWN_ROSTER.filter((r) => r.slot !== "CPT");
+    let failed = false;
+    for (let i = 0; i < utilSlots.length; i++) {
+      const slot = utilSlots[i]!;
+      const rest = utilSlots.slice(i + 1);
+      const leftoverAfterMin = (candidate: Player) => {
+        const next = new Set(usedCore);
+        next.add(coreId(candidate));
+        return SALARY_CAP - salary - candidate.salary - remainingMinShowdown(rest, utilPool, next);
+      };
+      const lockedFit = [...lockIds]
+        .map((id) => byId.get(id))
+        .find((p) => p && p.showdownRole !== "CPT" && !usedCore.has(coreId(p)) && leftoverAfterMin(p) >= 0);
+      let pick: Player | null = lockedFit ?? null;
+      if (!pick) {
+        const candidates = utilPool.filter((p) => !usedCore.has(coreId(p)) && leftoverAfterMin(p) >= 0);
+        pick = weightedPick(
+          candidates,
+          (p) => scorePlayer(contest === "milly" ? "milly" : "doubleup", p, rng, false),
+          rng,
+        );
+      }
+      if (!pick) {
+        failed = true;
+        break;
+      }
+      usedCore.add(coreId(pick));
+      salary += pick.salary;
+      chosen.push({ slot: slot.slot, player: pick });
+    }
+    if (failed || chosen.length !== 6 || salary > SALARY_CAP) continue;
+
+    for (let k = 0; k < (contest === "milly" ? 10 : 22); k++) {
+      const idx = 1 + Math.floor(rng() * 5);
+      const cur = chosen[idx];
+      if (!cur) continue;
+      const alt = utilPool.filter((p) => {
+        if (usedCore.has(coreId(p)) && coreId(p) !== coreId(cur.player)) return false;
+        if (coreId(p) === coreId(chosen[0]!.player)) return false;
+        const newSalary = salary - cur.player.salary + p.salary;
+        if (newSalary > SALARY_CAP) return false;
+        return p.projection > cur.player.projection + 0.2;
+      });
+      if (!alt.length) continue;
+      const next = weightedPick(alt, (p) => p.projection, rng);
+      if (!next || coreId(next) === coreId(cur.player)) continue;
+      usedCore.delete(coreId(cur.player));
+      usedCore.add(coreId(next));
+      salary = salary - cur.player.salary + next.salary;
+      chosen[idx] = { slot: cur.slot, player: next };
+    }
+
+    const key = chosen.map((c) => coreId(c.player)).sort().join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const ordered = SHOWDOWN_ROSTER.map((r) => chosen.find((c) => c.slot === r.slot)!).filter(Boolean);
+    const projection = ordered.reduce((s, c) => s + c.player.projection, 0);
+    const value = ordered.reduce((s, c) => s + c.player.value, 0) / ordered.length;
+    const cap = ordered[0]?.player;
+    const mates = ordered.filter((c) => cap && c.player.team === cap.team && c.player.id !== cap.id);
+    results.push({
+      id: `L${results.length + 1}`,
+      players: ordered,
+      salary,
+      projection,
+      value,
+      remaining: SALARY_CAP - salary,
+      stacks: cap && mates.length ? [`CPT ${cap.name.split(" ").slice(-1)[0]}`] : ["Showdown"],
+    });
+  }
+
+  return results.sort((a, b) => b.projection - a.projection);
+}
+
+function remainingMinShowdown(
+  unfilled: { slot: RosterSlot; positions: Position[] }[],
+  pool: Player[],
+  usedCore: Set<string>,
+): number {
+  const taken = new Set(usedCore);
+  let total = 0;
+  for (const _slot of unfilled) {
+    const cheapest = pool
+      .filter((p) => !taken.has(coreId(p)))
+      .sort((a, b) => a.salary - b.salary)[0];
+    if (!cheapest) return Number.POSITIVE_INFINITY;
+    taken.add(coreId(cheapest));
+    total += cheapest.salary;
+  }
+  return total;
 }
 
 export function lineupAsText(lineup: Lineup): string {

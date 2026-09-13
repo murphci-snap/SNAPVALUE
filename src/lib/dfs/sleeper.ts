@@ -1,11 +1,12 @@
 import type { Player, Position } from "./types";
 
 const CHEAP: Position[] = ["QB", "RB", "WR", "TE"];
-const SOFT: Record<Position, number> = { QB: 5500, RB: 5000, WR: 5000, TE: 5000, DST: 3000 };
-const TYPICAL: Record<Position, number> = { QB: 2.35, RB: 2.05, WR: 2.05, TE: 2.0, DST: 1.6 };
+const SOFT: Record<Position, number> = { QB: 5500, RB: 5000, WR: 5000, TE: 5000, DST: 3000, K: 4500 };
+const TYPICAL: Record<Position, number> = { QB: 2.35, RB: 2.05, WR: 2.05, TE: 2.0, DST: 1.6, K: 1.8 };
 const TAKE = 1;
 
 function available(p: Player): boolean {
+  if (p.showdownRole === "CPT") return false;
   if (p.salary <= 0) return false;
   if (p.injury && /out|ir|doubtful|suspended/i.test(p.injury)) return false;
   if (/^(out|ir|doubtful|suspended)/i.test(p.status)) return false;

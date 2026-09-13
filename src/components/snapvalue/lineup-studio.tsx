@@ -4,31 +4,44 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CONTEST_META, generateLineups, lineupAsText, type ContestStyle } from "@/lib/dfs/optimizer";
 import { SLOT_LABEL } from "@/lib/dfs/constants";
-import type { Lineup, Player } from "@/lib/dfs/types";
+import type { Lineup, Player, SlateFormat } from "@/lib/dfs/types";
 import { cn, formatPts, formatUsd } from "@/lib/utils";
 
-const CONTESTS: ContestStyle[] = ["single", "milly", "small"];
+const CLASSIC_CONTESTS: ContestStyle[] = ["single", "milly", "small", "doubleup"];
+const SHOWDOWN_CONTESTS: ContestStyle[] = ["doubleup", "milly"];
 
 export function LineupStudio({
   players,
   locks,
   excludes,
   onToggleLock,
+  format = "classic",
 }: {
   players: Player[];
   locks: string[];
   excludes: string[];
   onToggleLock: (id: string) => void;
+  format?: SlateFormat;
 }) {
   const [count, setCount] = useState(6);
   const [stack, setStack] = useState(true);
   const [contest, setContest] = useState<ContestStyle>("single");
   const [seed, setSeed] = useState(1);
   const [copied, setCopied] = useState<string | null>(null);
+  const showdown = format === "showdown";
+  const contests = showdown ? SHOWDOWN_CONTESTS : CLASSIC_CONTESTS;
+  const activeContest = showdown && contest !== "doubleup" && contest !== "milly" ? "doubleup" : contest;
 
   const lineups = useMemo(
-    () => generateLineups(players, count, seed, { stackQb: stack, locks, excludes, contest }),
-    [players, count, seed, stack, locks, excludes, contest],
+    () =>
+      generateLineups(players, count, seed, {
+        stackQb: stack && !showdown,
+        locks,
+        excludes,
+        contest: activeContest,
+        format,
+      }),
+    [players, count, seed, stack, locks, excludes, activeContest, format, showdown],
   );
 
   function copy(lineup: Lineup) {
@@ -60,6 +73,7 @@ export function LineupStudio({
               </button>
             ))}
           </div>
+          {showdown ? null : (
           <Button
             variant={stack ? "value" : "secondary"}
             size="sm"
@@ -67,6 +81,7 @@ export function LineupStudio({
           >
             {stack ? "QB stack on" : "QB stack off"}
           </Button>
+          )}
           <Button size="sm" onClick={() => setSeed(Date.now())}>
             <RefreshCw />
             Shuffle
@@ -77,7 +92,7 @@ export function LineupStudio({
       <div>
         <p className="text-faint mb-1.5 text-[10px] tracking-[0.16em] uppercase">Contest</p>
         <div className="flex flex-wrap gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
-          {CONTESTS.map((id) => (
+          {contests.map((id) => (
             <button
               key={id}
               type="button"
@@ -87,14 +102,20 @@ export function LineupStudio({
               }}
               className={cn(
                 "h-11 flex-1 rounded-md px-3 text-sm font-medium transition-colors duration-150 sm:flex-none",
-                contest === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                activeContest === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {CONTEST_META[id].label}
+              {showdown && id === "doubleup" ? "Chalk CPT" : showdown && id === "milly" ? "GPP CPT" : CONTEST_META[id].label}
             </button>
           ))}
         </div>
-        <p className="text-muted-foreground mt-2 max-w-2xl text-sm">{CONTEST_META[contest].blurb}</p>
+        <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
+          {showdown
+            ? activeContest === "milly"
+              ? "Showdown GPP: leverage captain, unique UTIL. CPT scores 1.5×. $50k."
+              : "Showdown cash: chalk captain, spend the cap, high floors. CPT scores 1.5×. $50k."
+            : CONTEST_META[activeContest].blurb}
+        </p>
       </div>
 
       {locks.length > 0 && (
@@ -106,7 +127,7 @@ export function LineupStudio({
       {lineups.length === 0 ? (
         <div className="rounded-xl bg-card px-4 py-8 text-center shadow-[var(--shadow-border)]">
           <p className="text-muted-foreground text-sm">
-            Not enough viable players to fill a $50k Classic roster. Unlock a few or widen the slate.
+            Not enough viable players to fill a $50k {showdown ? "Showdown" : "Classic"} roster. Unlock a few or widen the slate.
           </p>
         </div>
       ) : (
@@ -120,7 +141,9 @@ export function LineupStudio({
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="display text-lg font-semibold">{lu.id}</span>
-                  <Badge variant="outline">{CONTEST_META[contest].label}</Badge>
+                  <Badge variant="outline">
+                    {showdown ? (activeContest === "milly" ? "GPP CPT" : "Chalk CPT") : CONTEST_META[activeContest].label}
+                  </Badge>
                   {lu.stacks.map((s) => (
                     <Badge key={s} variant="hot">
                       {s}
@@ -152,12 +175,13 @@ export function LineupStudio({
                   const locked = locks.includes(lp.player.id);
                   return (
                     <li key={lp.slot} className="flex items-center gap-2 py-1.5">
-                      <span className="text-faint w-8 shrink-0 font-mono text-[10px] tracking-wide">
+                      <span className="text-faint w-10 shrink-0 font-mono text-[10px] tracking-wide">
                         {SLOT_LABEL[lp.slot]}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {lp.player.name}
                         <span className="text-muted-foreground"> {lp.player.team}</span>
+                        {lp.slot === "CPT" ? <span className="text-value"> · 1.5×</span> : null}
                       </span>
                       <span className="font-mono text-xs text-muted-foreground tabular-nums">
                         {formatPts(lp.player.projection)}
@@ -184,11 +208,15 @@ export function LineupStudio({
 
       <p className="text-faint flex items-center gap-1.5 text-[11px]">
         <Sparkles className="size-3" />
-        {contest === "milly"
-          ? "GPP build: stacks, bring-backs, and bargain-bin darts. Not advice."
-          : contest === "small"
-            ? "Small-field build: floor first, spend the cap. Not advice."
-            : "Single-entry build: one core plus a leverage piece. Not advice."}
+        {showdown
+          ? "Showdown: one Captain at 1.5× salary and points, five UTIL. Not advice."
+          : activeContest === "milly"
+            ? "GPP build: stacks, bring-backs, and bargain-bin darts. Not advice."
+            : activeContest === "small"
+              ? "Small-field build: floor first, spend the cap. Not advice."
+              : activeContest === "doubleup"
+                ? "Double Up: chalk, floors, spend the cap. Not advice."
+                : "Single-entry build: one core plus a leverage piece. Not advice."}
       </p>
     </section>
   );

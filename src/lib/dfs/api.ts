@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { normalizeName } from "@/lib/utils";
-import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP } from "./constants";
+import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP, SHOWDOWN_POSITIONS } from "./constants";
 import { getJson, settled } from "./http";
 import { markItFactor } from "./it-factor";
 import { markCheapImpact } from "./sleeper";
@@ -15,13 +15,14 @@ import type {
   Player,
   Position,
   RankingMethod,
+  SlateFormat,
   SlateOption,
   SlateResponse,
   SourceProjection,
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 18;
+const CACHE_VER = 19;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -143,6 +144,7 @@ function pickClassicSlates(groups: DkGroup[]): SlateOption[] {
       suffix,
       startTime: g.minStartTime,
       gameCount: g.games?.length ?? 0,
+      format: "classic",
     });
   }
   out.sort((a, b) => b.gameCount - a.gameCount || a.startTime.localeCompare(b.startTime));
@@ -151,6 +153,49 @@ function pickClassicSlates(groups: DkGroup[]): SlateOption[] {
     const k = `${s.suffix}-${s.gameCount}`;
     if (seen.has(k)) return false;
     seen.add(k);
+    return true;
+  });
+}
+
+function showdownGameName(g: DkGroup): string {
+  const first = Array.isArray(g.games) ? g.games[0] : null;
+  if (first && typeof first === "object" && first && "name" in first) {
+    const n = String((first as { name?: string }).name ?? "").trim();
+    if (n) return n;
+  }
+  const raw = (g.startTimeSuffix ?? "").replace(/[()]/g, "").trim();
+  return raw || "Showdown";
+}
+
+function pickShowdownSlates(groups: DkGroup[]): SlateOption[] {
+  const now = Date.now();
+  const weekMs = 8 * 24 * 60 * 60 * 1000;
+  const out: SlateOption[] = [];
+  for (const g of groups) {
+    if (g.contestType?.contestTypeId !== 96) continue;
+    if (g.sportId && g.sportId !== 1) continue;
+    const nfl = (g.leagues ?? []).some((l) => l.leagueAbbreviation === "NFL") || !g.leagues?.length;
+    if (!nfl) continue;
+    const start = Date.parse(g.minStartTime);
+    if (!Number.isFinite(start) || start < now - 12 * 60 * 60 * 1000 || start > now + weekMs) continue;
+    if (g.draftGroupState && !/upcoming|live/i.test(g.draftGroupState)) continue;
+    const games = g.games?.length ?? 0;
+    if (games > 1) continue;
+    const name = showdownGameName(g);
+    out.push({
+      draftGroupId: g.draftGroupId,
+      label: `Showdown · ${name}`,
+      suffix: name,
+      startTime: g.minStartTime,
+      gameCount: games || 1,
+      format: "showdown",
+    });
+  }
+  out.sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const seen = new Set<number>();
+  return out.filter((s) => {
+    if (seen.has(s.draftGroupId)) return false;
+    seen.add(s.draftGroupId);
     return true;
   });
 }
@@ -275,17 +320,21 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
 
     const week = Number(state.week) || 1;
     const season = Number(state.season) || 2026;
-    const slates = pickClassicSlates(groupsJson.draftGroups ?? []);
+    const classic = pickClassicSlates(groupsJson.draftGroups ?? []);
+    const showdowns = pickShowdownSlates(groupsJson.draftGroups ?? []);
+    const slates = [...classic, ...showdowns];
     if (!slates.length) {
-      const err: SlateResponse = { ok: false, error: "No DraftKings Classic slates are posted yet." };
+      const err: SlateResponse = { ok: false, error: "No DraftKings Classic or Showdown slates are posted yet." };
       cache.set(cacheKey, { at: Date.now(), value: err });
       return err;
     }
 
     const selected =
       slates.find((s) => s.draftGroupId === draftGroupId) ??
-      slates.find((s) => /wed-mon/i.test(s.suffix)) ??
+      slates.find((s) => s.format === "classic" && /wed-mon/i.test(s.suffix)) ??
+      slates.find((s) => s.format === "classic") ??
       slates[0]!;
+    const format: SlateFormat = selected.format ?? "classic";
 
     const yahooP = withTimeout(loadYahoo(), siteMs, EMPTY_SITE);
     const cbsP = withTimeout(loadCbs(season, week), siteMs, EMPTY_SITE);
@@ -351,16 +400,24 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       if (seasonStats) dstSeason.set(abbr, seasonStats);
     }
 
-    const unique = new Map<number, DkDraftable>();
+    const unique = new Map<string, DkDraftable>();
+    const allowed = format === "showdown" ? SHOWDOWN_POSITIONS : POSITIONS;
     for (const d of draftablesJson.draftables ?? []) {
+      if (!allowed.includes(d.position as Position)) continue;
+      if (format === "classic") {
+        if (d.rosterSlotId === 70) continue;
+        if (!unique.has(String(d.playerId))) unique.set(String(d.playerId), d);
+        continue;
+      }
       if (d.rosterSlotId === 70) continue;
-      if (!POSITIONS.includes(d.position as Position)) continue;
-      if (!unique.has(d.playerId)) unique.set(d.playerId, d);
+      const role = d.rosterSlotId === 511 ? "CPT" : "FLEX";
+      unique.set(`${d.playerId}:${role}`, d);
     }
 
     const players: Player[] = [];
     for (const d of unique.values()) {
       const position = d.position as Position;
+      const showdownRole = format === "showdown" ? (d.rosterSlotId === 511 ? "CPT" : "FLEX") : null;
       const team = d.teamAbbreviation;
       const gameName = d.competition?.name ?? "";
       const { opp, home } = opponentOf(gameName, team);
@@ -447,6 +504,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         projection = fppg * mult * (home ? 1.02 : 1);
       }
       projection = Math.max(0, projection);
+      if (showdownRole === "CPT") projection *= 1.5;
 
       const defStats = dstSeason.get(opp);
       const defense: DefenseProfile = {
@@ -467,7 +525,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       const injury = ep?.injuryStatus && ep.injuryStatus !== "ACTIVE" ? ep.injuryStatus : null;
 
       players.push({
-        id: String(d.playerId),
+        id: showdownRole ? `${d.playerId}:${showdownRole}` : String(d.playerId),
         dkId: d.playerDkId,
         name: d.displayName,
         firstName: d.firstName,
@@ -506,7 +564,22 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         anytimeTd: props?.line.anytimeTd ?? null,
         cheapImpact: false,
         cheapImpactWhy: null,
+        showdownRole,
       });
+    }
+
+    if (format === "showdown" && !players.some((p) => p.showdownRole === "CPT")) {
+      const extras = players
+        .filter((p) => p.showdownRole === "FLEX")
+        .map((p) => ({
+          ...p,
+          id: `${p.id.replace(/:FLEX$/i, "")}:CPT`,
+          salary: Math.round((p.salary * 1.5) / 100) * 100,
+          projection: round1(p.projection * 1.5),
+          value: p.salary > 0 ? round2((p.projection * 1.5) / ((p.salary * 1.5) / 1000)) : 0,
+          showdownRole: "CPT" as const,
+        }));
+      players.push(...extras);
     }
 
     const byTeamPos = new Map<string, Player[]>();
@@ -534,11 +607,17 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       }
       dvp[pos] = [...seen.values()].sort((a, b) => b.rankVsPos - a.rankVsPos);
     }
+    dvp.K = [];
 
     for (const pos of POSITIONS) {
       const floor = pos === "DST" ? 4 : pos === "TE" ? 5.5 : 6;
       const group = players.filter(
-        (p) => p.position === pos && p.isStarter && (pos === "DST" || p.salary >= 3000) && p.projection >= floor,
+        (p) =>
+          p.position === pos &&
+          p.isStarter &&
+          p.showdownRole !== "CPT" &&
+          (pos === "DST" || p.salary >= 3000) &&
+          p.projection >= floor,
       );
       const sorted = [...group].sort((a, b) => b.value - a.value || b.projection - a.projection);
       sorted.forEach((p, i) => {
@@ -557,6 +636,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     players.sort((a, b) => b.projection - a.projection || b.salary - a.salary);
 
     const trimmed = players.filter((p) => {
+      if (format === "showdown") return p.salary > 0;
       if (p.position === "DST") return true;
       if (p.isValuePlay || p.itFactor || p.cheapImpact) return true;
       if (p.salary >= 4500) return true;
@@ -586,6 +666,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       draftGroupId: selected.draftGroupId,
       salaryCap: SALARY_CAP,
       slateLabel: selected.label,
+      format,
       slates,
       games,
       players: trimmed,

@@ -413,7 +413,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   };
 
   const scored = players
-    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
+    .filter((p) => p.position !== "DST" && p.position !== "K" && p.isStarter && p.showdownRole !== "CPT" && kickoffOk(p.startTime))
     .map((p) => {
       const prob = atdProb(p);
       const match = p.oppQuality === "High" ? 1.12 : p.oppQuality === "Low" ? 0.88 : 1;
@@ -472,7 +472,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
 
   const multiRows: MultiRow[] = players
     .filter((p) => {
-      if (p.position === "DST" || !p.isStarter) return false;
+      if (p.position === "DST" || p.position === "K" || !p.isStarter) return false;
+      if (p.showdownRole === "CPT") return false;
       if (/out|ir|doubtful|suspended/i.test(p.injury ?? "") || /^(out|ir|doubtful)/i.test(p.status)) return false;
       if (!kickoffOk(p.startTime)) return false;
       return true;
@@ -556,7 +557,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   }
 
   const lottoPool = players
-    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
+    .filter((p) => p.position !== "DST" && p.position !== "K" && p.isStarter && p.showdownRole !== "CPT" && kickoffOk(p.startTime))
     .map((p) => {
       const raw = atdProb(p);
       const match = p.oppQuality === "High" ? 1.1 : p.oppQuality === "Low" ? 0.9 : 1;

@@ -1,6 +1,23 @@
-export type Position = "QB" | "RB" | "WR" | "TE" | "DST";
+export type Position = "QB" | "RB" | "WR" | "TE" | "DST" | "K";
 export type FlexPosition = "RB" | "WR" | "TE";
-export type RosterSlot = "QB" | "RB" | "RB2" | "WR" | "WR2" | "WR3" | "TE" | "FLEX" | "DST";
+export type RosterSlot =
+  | "QB"
+  | "RB"
+  | "RB2"
+  | "WR"
+  | "WR2"
+  | "WR3"
+  | "TE"
+  | "FLEX"
+  | "DST"
+  | "CPT"
+  | "UTIL"
+  | "UTIL2"
+  | "UTIL3"
+  | "UTIL4"
+  | "UTIL5";
+export type SlateFormat = "classic" | "showdown";
+export type ShowdownRole = "CPT" | "FLEX";
 
 export type MatchupQuality = "High" | "Medium" | "Low" | "Unknown";
 
@@ -142,6 +159,7 @@ export interface Player {
   anytimeTd: number | null;
   cheapImpact: boolean;
   cheapImpactWhy: string | null;
+  showdownRole: ShowdownRole | null;
 }
 
 export interface SlateOption {
@@ -150,6 +168,7 @@ export interface SlateOption {
   suffix: string;
   startTime: string;
   gameCount: number;
+  format: SlateFormat;
 }
 
 export interface DataSourceInfo {
@@ -169,6 +188,7 @@ export interface SlateData {
   draftGroupId: number;
   salaryCap: number;
   slateLabel: string;
+  format: SlateFormat;
   slates: SlateOption[];
   games: Game[];
   players: Player[];
