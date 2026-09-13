@@ -104,7 +104,7 @@ function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge:
   }
   if (trap) {
     homeEdge -= 0.03;
-    bits.push(`Short favorite in a noisy spot — street often overrates ${game.homeAbbr}`);
+    bits.push(`Short favorite in a noisy spot — casual money often overrates ${game.homeAbbr}`);
   }
   if (impliedGap <= -6 && game.spread > -7) {
     homeEdge -= 0.02;
@@ -184,7 +184,7 @@ function propCard(
     books,
     tape: over
       ? "Public leans overs on star skill. Only take it with a real number gap."
-      : "Unders are the quieter side on player yards. Street often still hammers the over.",
+      : "Unders on player yards are quieter. Most casual money still hammers the over.",
     unit: "0.5u",
   };
 }
@@ -261,10 +261,10 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         books: booksFor(g),
         tape:
           Math.abs(spread) >= 7
-            ? "Public will hammer this favorite in survivor and sides. Only a Grok play if the TD board agrees."
+            ? "Heavy public favorite for spreads and survivor. Only lean this side if anytime-TD / scoring prices also back a cover — not just the spread."
             : Math.abs(spread) <= 3
-              ? "Action Network / street often fade short favorites in week-openers. We only take it with a mismatch."
-              : "Mid-range number — books and cappers usually split.",
+              ? "Short favorites get bet just because the number looks small. Only take it if the matchup or TD prices actually disagree with the market."
+              : "Mid-range number — books and public usually split. Lean it only with a real mismatch.",
         unit: "1u",
       });
     }
@@ -280,7 +280,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         confidence: Math.round(51 + t.edge * 160),
         why: t.why,
         books: booksFor(g),
-        tape: t.pick === "over" ? "Overs are the public side. Need a real TD-market edge." : "Unders are the sharper street lean most weeks.",
+        tape: t.pick === "over" ? "Overs are the public side. Need a real TD-market edge." : "Unders are the quieter side most weeks. Most casual money still lives on the over.",
         unit: "1u",
       });
     }
@@ -311,7 +311,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           confidence: 56,
           why: `Quietest total on the board. Model closer to ${expected.toFixed(1)} than the posted ${g.total}.`,
           books: booksFor(g),
-          tape: "Unders are the sharper street lean most weeks. Public still lives on the over.",
+          tape: "Unders are the quieter side most weeks. Most casual money still lives on the over.",
           unit: "1u",
         };
       }
@@ -481,7 +481,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         line: `${g.awayAbbr} @ ${g.homeAbbr}`,
         edge: 0.05,
         confidence: 58,
-        why: `Short favorite in a coin-flip TD market. Street will still hammer ${fav}. We stand down.`,
+        why: `Short favorite in a coin-flip TD market. Casual money will still pile on ${fav}. We stand down.`,
         books: booksFor(g),
         tape: "Classic trap number. No bet is the bet.",
         unit: "0u",
@@ -517,7 +517,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     playerProps,
     atdParlay,
     lottoTicket,
-    sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "Grok model", "Public tape + X cappers"],
+    sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "SNAPVALUE model", "Public tape + X cappers"],
   };
 }
 
