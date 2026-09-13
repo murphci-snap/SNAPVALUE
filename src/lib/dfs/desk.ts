@@ -1,4 +1,5 @@
 import {
+  clamp,
   formatPct,
   formatSpread,
   isUpcoming,
@@ -53,15 +54,56 @@ export interface WeeklyDesk {
   sources: string[];
 }
 
-function impliedTdShare(players: Player[], team: string): number {
-  let s = 0;
-  for (const p of players) {
-    if (p.team !== team) continue;
-    if (p.anytimeTd != null && p.anytimeTd > 0 && p.anytimeTd < 1) s += p.anytimeTd;
-    else if (p.anytimeTd != null && Math.abs(p.anytimeTd) >= 100) s += americanToProb(p.anytimeTd);
-    else if (p.week) s += Math.min(0.55, (p.week.rushTd + p.week.recTd) * 0.72);
+function playerAtd(p: Player): number {
+  if (p.anytimeTd != null && p.anytimeTd > 0 && p.anytimeTd < 1) return p.anytimeTd;
+  if (p.anytimeTd != null && Math.abs(p.anytimeTd) >= 100) return americanToProb(p.anytimeTd);
+  if (p.week) {
+    const exp = p.week.rushTd + p.week.recTd + (p.position === "QB" ? p.week.passTd * 0.1 : 0);
+    return Math.min(0.55, Math.max(0, exp) * 0.72);
   }
-  return s;
+  return 0;
+}
+
+/** Dampened team TDs — independence + rank decay. Not a raw ATD sum. */
+function teamTdExpect(players: Player[], team: string): number {
+  const probs = players
+    .filter((p) => p.team === team && p.position !== "DST")
+    .map(playerAtd)
+    .filter((x) => x >= 0.08)
+    .sort((a, b) => b - a)
+    .slice(0, 5);
+  if (!probs.length) return 1.6;
+  let none = 1;
+  let decayed = 0;
+  probs.forEach((p, i) => {
+    const x = Math.min(0.82, p);
+    none *= 1 - x;
+    decayed += x * Math.pow(0.64, i);
+  });
+  const atLeastOne = 1 - none;
+  return clamp(Math.max(atLeastOne, decayed), 0.9, 3.1);
+}
+
+function impliedTdShare(players: Player[], team: string): number {
+  return teamTdExpect(players, team);
+}
+
+function expectedTotal(game: Game, players: Player[]): number {
+  const posted = game.total;
+  const market =
+    game.homeImplied != null && game.awayImplied != null ? game.homeImplied + game.awayImplied : null;
+  const tds = teamTdExpect(players, game.homeAbbr) + teamTdExpect(players, game.awayAbbr);
+  const fromTd = tds * 6.8 + 9.2 + (game.isDome ? 0.7 : 0);
+  let expected = market != null && market >= 30 && market <= 62 ? market * 0.78 + fromTd * 0.22 : fromTd;
+  if (posted != null) {
+    expected = posted * 0.5 + expected * 0.5;
+    expected = clamp(expected, posted - 7, posted + 7);
+  }
+  return round1(clamp(expected, 33, 58));
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
 }
 
 function booksFor(game: Game): string {
@@ -120,18 +162,20 @@ function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge:
   return { side, edge, why: `${why}. Cover number ${formatSpread(spread)}. ` };
 }
 
-function scoreTotal(game: Game, players: Player[]): { pick: "over" | "under"; edge: number; why: string } | null {
+function scoreTotal(game: Game, players: Player[]): { pick: "over" | "under"; edge: number; why: string; expected: number } | null {
   if (game.total == null) return null;
-  const td = impliedTdShare(players, game.homeAbbr) + impliedTdShare(players, game.awayAbbr);
-  const expected = 38 + td * 14 + (game.isDome ? 1.4 : 0);
-  const gap = expected - game.total;
+  const posted = game.total;
+  const expected = expectedTotal(game, players);
+  const gap = expected - posted;
+  if (Math.abs(gap) < (gap < 0 ? 0.6 : 1.0)) return null;
   const pick = gap > 0 ? "over" : "under";
-  if (Math.abs(gap) < (pick === "under" ? 0.6 : 1.2)) return null;
+  if (pick === "under" && expected >= posted) return null;
+  if (pick === "over" && expected <= posted) return null;
   const why =
     pick === "over"
-      ? `Player TD prices + ${game.isDome ? "dome" : "this matchup"} imply closer to ${expected.toFixed(1)} than the posted ${game.total}.`
-      : `Posted ${game.total} is fat versus a TD market that looks closer to ${expected.toFixed(1)}.`;
-  return { pick, edge: Math.min(0.12, Math.abs(gap) / 40), why };
+      ? `Books sit at ${posted}. Model total ${expected.toFixed(1)} after implied points and a dampened TD lean${game.isDome ? " (dome)" : ""}.`
+      : `Posted ${posted} is high versus a model total of ${expected.toFixed(1)} (implied points + TD prices, capped near the number).`;
+  return { pick, edge: Math.min(0.12, Math.abs(gap) / 18), why, expected };
 }
 
 function gameOf(p: Player, games: Game[]): Game | undefined {
@@ -296,8 +340,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     let bestGap = Number.POSITIVE_INFINITY;
     for (const g of live) {
       if (g.total == null) continue;
-      const td = impliedTdShare(players, g.homeAbbr) + impliedTdShare(players, g.awayAbbr);
-      const expected = 38 + td * 14 + (g.isDome ? 1.4 : 0);
+      const raw = expectedTotal(g, players);
+      const expected = Math.min(raw, g.total - 0.8);
       const gap = expected - g.total;
       if (gap < bestGap) {
         bestGap = gap;
@@ -307,9 +351,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           market: "total",
           pick: `under ${g.total}`,
           line: `${g.awayAbbr} @ ${g.homeAbbr}`,
-          edge: Math.min(0.1, Math.abs(gap) / 40 + 0.03),
+          edge: Math.min(0.1, Math.abs(gap) / 18 + 0.03),
           confidence: 56,
-          why: `Quietest total on the board. Model closer to ${expected.toFixed(1)} than the posted ${g.total}.`,
+          why: `Quietest total on the board. Model ${expected.toFixed(1)} vs posted ${g.total}.`,
           books: booksFor(g),
           tape: "Unders are the quieter side most weeks. Most casual money still lives on the over.",
           unit: "1u",
@@ -488,8 +532,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       });
     }
     if (g.total != null && g.total >= 48) {
-      const td = favTd + dogTd;
-      const expected = 38 + td * 14 + (g.isDome ? 1.4 : 0);
+      const expected = expectedTotal(g, players);
       if (expected < g.total - 1) {
         fades.push({
           id: `fade-over-${g.id}`,
@@ -499,7 +542,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           line: `${g.awayAbbr} @ ${g.homeAbbr}`,
           edge: 0.04,
           confidence: 55,
-          why: `Posted ${g.total} is a public magnet. TD market looks closer to ${expected.toFixed(1)}.`,
+          why: `Posted ${g.total} is a public magnet. Model total ${expected.toFixed(1)}.`,
           books: booksFor(g),
           tape: "Do not chase the shootout just because the number is loud.",
           unit: "0u",
