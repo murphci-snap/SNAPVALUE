@@ -31,7 +31,33 @@ function BetCard({ bet, kicker }: { bet: DeskBet; kicker?: string }) {
   );
 }
 
-export function BetDesk({ games, players }: { games: Game[]; players: Player[] }) {
+function splitPropPick(pick: string): { name: string; market: string } {
+  const m = pick.match(/^(.*?)\s+([ou])(\d+(?:\.\d+)?)\s+(.+)$/i);
+  if (!m) return { name: pick, market: "" };
+  const side = m[2]!.toLowerCase() === "o" ? "Over" : "Under";
+  return { name: m[1]!, market: `${side} ${m[3]} ${m[4]}` };
+}
+
+function PropCard({ bet, kicker }: { bet: DeskBet; kicker: string }) {
+  const { name, market } = splitPropPick(bet.pick);
+  return (
+    <li className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-faint text-[10px] tracking-[0.18em] uppercase">{kicker}</p>
+        <p className="font-mono text-[11px] text-value tabular-nums">{bet.unit}</p>
+      </div>
+      <h3 className="display mt-1 text-2xl leading-none font-semibold">{name}</h3>
+      <p className="display mt-2 text-lg leading-none font-semibold text-value">{market || bet.title}</p>
+      <p className="text-muted-foreground mt-1 text-xs">{bet.line}</p>
+      <p className="mt-3 text-sm leading-snug">{bet.why}</p>
+      <p className="text-ink mt-2 text-xs leading-snug">{bet.tape}</p>
+      <Conf n={bet.confidence} />
+      <p className="text-faint mt-2 font-mono text-[11px]">
+        {bet.books} · conf {bet.confidence}
+      </p>
+    </li>
+  );
+}
   const desk = useMemo(() => buildWeeklyDesk(games, players), [games, players]);
 
   return (
@@ -115,7 +141,7 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
         ) : (
           <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {desk.playerProps.map((bet) => (
-              <BetCard
+              <PropCard
                 key={bet.id}
                 bet={bet}
                 kicker={
