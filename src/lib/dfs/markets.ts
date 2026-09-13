@@ -48,7 +48,8 @@ export function kickoffMs(iso: string): number {
 
 export function isUpcoming(game: Game, now = Date.now()): boolean {
   const t = kickoffMs(game.startTime);
-  return t === 0 || t > now - 15 * 60 * 1000;
+  if (t === 0) return true;
+  return t > now - 8 * 60 * 1000;
 }
 
 export function otherTeam(game: Game, abbr: string): string {

@@ -66,8 +66,13 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
     <div className="flex flex-col gap-10">
       <p className="text-muted-foreground max-w-2xl text-sm">
         Units: best bets and the spread lock are 1u. Player props and the moneyline dog are 0.5u. Two-leg ATD 0.5u.
-        Two-player 2+ TD 0.25u. Lotto 0.1u. Fades are sit-outs, not bets. Fun only.
+        Three-leg ATD 0.25u. Two-player 2+ TD 0.25u. Lotto 0.1u. Fades are sit-outs, not bets. Fun only.
       </p>
+      {desk.remainingOnly ? (
+        <p className="text-faint -mt-6 font-mono text-[11px] tracking-wide uppercase">
+          Remaining games this week — started / final slates are off the board
+        </p>
+      ) : null}
 
       <section>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -195,7 +200,45 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">Need two priced anytime-TD names on separate games.</p>
+          <p className="text-muted-foreground text-sm">Need two priced anytime-TD names on separate remaining games.</p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="display text-2xl font-semibold">Three-player anytime TD</h2>
+        <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
+          Three legs, three games. 0.25u. Not a same-game parlay.
+        </p>
+        {desk.atdParlay3 ? (
+          <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
+                3-leg ATD · {desk.atdParlay3.unit ?? "0.25u"}
+              </p>
+              <p className="display text-3xl leading-none font-semibold">
+                {formatAmerican(desk.atdParlay3.combinedAmerican)}
+                <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
+                  {formatPct(desk.atdParlay3.combinedProb)} combined
+                </span>
+              </p>
+            </div>
+            <ol className="mt-4 grid gap-3 md:grid-cols-3">
+              {desk.atdParlay3.legs.map((leg, i) => (
+                <li key={leg.name} className="rounded-lg bg-secondary px-3 py-3">
+                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">Leg {i + 1}</p>
+                  <p className="display text-2xl leading-none font-semibold">{leg.name}</p>
+                  <p className="text-muted-foreground mt-1 font-mono text-sm">
+                    {formatAmerican(leg.american)} · {leg.team} vs {leg.opponent}
+                  </p>
+                  <p className="mt-2 text-xs leading-snug">{leg.why}</p>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-4 text-sm leading-relaxed">{desk.atdParlay3.why}</p>
+            <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay3.tape}</p>
+          </article>
+        ) : (
+          <p className="text-muted-foreground text-sm">Need three priced anytime-TD names on separate remaining games.</p>
         )}
       </section>
 

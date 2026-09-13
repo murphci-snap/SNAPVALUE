@@ -46,14 +46,6 @@ export interface TdParlay {
   unit?: string;
 }
 
-export interface TdParlay {
-  legs: TdLeg[];
-  combinedAmerican: number;
-  combinedProb: number;
-  why: string;
-  tape: string;
-}
-
 export interface WeeklyDesk {
   bestBets: DeskBet[];
   spreadLock: DeskBet | null;
@@ -61,9 +53,11 @@ export interface WeeklyDesk {
   fades: DeskBet[];
   playerProps: DeskBet[];
   atdParlay: TdParlay | null;
+  atdParlay3: TdParlay | null;
   multiTdParlay: TdParlay | null;
   lottoTicket: TdParlay | null;
   sources: string[];
+  remainingOnly: boolean;
 }
 
 function playerAtd(p: Player): number {
@@ -313,6 +307,18 @@ function gameOfPlayer(p: Player, games: Game[]): Game | undefined {
 
 export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   const live = games.filter((g) => isUpcoming(g));
+  const remainingOnly = games.some((g) => !isUpcoming(g));
+  const liveTeams = new Set(live.flatMap((g) => [g.homeAbbr, g.awayAbbr]));
+  const board = players.filter((p) => {
+    if (p.showdownRole === "CPT") return false;
+    if (p.position === "K") return false;
+    if (!liveTeams.has(p.team)) return false;
+    const g = gameOfPlayer(p, live) ?? gameOf(p, live);
+    if (g && !isUpcoming(g)) return false;
+    const t = Date.parse(p.startTime);
+    if (Number.isFinite(t) && t <= Date.now() - 8 * 60 * 1000) return false;
+    return true;
+  });
   const ats: DeskBet[] = [];
   const totals: DeskBet[] = [];
 
@@ -400,20 +406,20 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   if (ats[2] && bestBets.length < 3) bestBets.push(ats[2]);
 
   const playerProps = [
-    bestProp(players, games, "QB", "pass", (p) => p.props?.passYds),
-    bestProp(players, games, "RB", "rush", (p) => p.props?.rushYds),
-    bestProp(players, games, "RB", "rec", (p) => p.props?.recYds),
-    bestProp(players, games, "WR", "rec", (p) => p.props?.recYds),
-    bestProp(players, games, "TE", "rec", (p) => p.props?.recYds),
+    bestProp(board, live, "QB", "pass", (p) => p.props?.passYds),
+    bestProp(board, live, "RB", "rush", (p) => p.props?.rushYds),
+    bestProp(board, live, "RB", "rec", (p) => p.props?.recYds),
+    bestProp(board, live, "WR", "rec", (p) => p.props?.recYds),
+    bestProp(board, live, "TE", "rec", (p) => p.props?.recYds),
   ].filter((x): x is DeskBet => !!x);
 
   const kickoffOk = (iso: string) => {
     const t = Date.parse(iso);
-    return !Number.isFinite(t) || t > Date.now() - 15 * 60 * 1000;
+    return !Number.isFinite(t) || t > Date.now() - 8 * 60 * 1000;
   };
 
-  const scored = players
-    .filter((p) => p.position !== "DST" && p.position !== "K" && p.isStarter && p.showdownRole !== "CPT" && kickoffOk(p.startTime))
+  const scored = board
+    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
     .map((p) => {
       const prob = atdProb(p);
       const match = p.oppQuality === "High" ? 1.12 : p.oppQuality === "Low" ? 0.88 : 1;
@@ -459,7 +465,48 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     }
   }
 
-  const atdNames = new Set((atdParlay?.legs ?? []).map((l) => l.name));
+  const atd2Names = new Set((atdParlay?.legs ?? []).map((l) => l.name));
+
+  function pickAtdTriple(avoidTwo: boolean): typeof scored | null {
+    const pool = avoidTwo ? scored.filter((x) => !atd2Names.has(x.p.name)) : scored;
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        for (let k = j + 1; k < pool.length; k++) {
+          const a = pool[i]!;
+          const b = pool[j]!;
+          const c = pool[k]!;
+          const teams = new Set([a.p.team, b.p.team, c.p.team]);
+          const games = new Set([a.p.gameName, b.p.gameName, c.p.gameName]);
+          if (teams.size < 3 || games.size < 3) continue;
+          return [a, b, c];
+        }
+      }
+    }
+    return null;
+  }
+
+  const triple = pickAtdTriple(true) ?? pickAtdTriple(false);
+  let atdParlay3: TdParlay | null = null;
+  if (triple) {
+    const combined = parlayProb(triple.map((x) => x.prob));
+    atdParlay3 = {
+      unit: "0.25u",
+      legs: triple.map((x, i) => ({
+        name: x.p.name,
+        team: x.p.team,
+        opponent: x.p.opponent,
+        american: x.american,
+        prob: x.prob,
+        why: `${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}${i ? ` · independent of ${triple[0]!.p.team}` : ""}`,
+      })),
+      combinedAmerican: probToAmerican(combined),
+      combinedProb: combined,
+      why: "Three independent games. Different teams, no same-backfield. Between the two-leg and the lotto.",
+      tape: "0.25u. One miss kills it. Prefer leftover names vs the two-leg when the board allows.",
+    };
+  }
+
+  const atdNames = new Set([...(atdParlay?.legs ?? []), ...(atdParlay3?.legs ?? [])].map((l) => l.name));
 
   type MultiRow = {
     p: Player;
@@ -470,10 +517,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     s: number;
   };
 
-  const multiRows: MultiRow[] = players
+  const multiRows: MultiRow[] = board
     .filter((p) => {
-      if (p.position === "DST" || p.position === "K" || !p.isStarter) return false;
-      if (p.showdownRole === "CPT") return false;
+      if (p.position === "DST" || !p.isStarter) return false;
       if (/out|ir|doubtful|suspended/i.test(p.injury ?? "") || /^(out|ir|doubtful)/i.test(p.status)) return false;
       if (!kickoffOk(p.startTime)) return false;
       return true;
@@ -556,8 +602,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     };
   }
 
-  const lottoPool = players
-    .filter((p) => p.position !== "DST" && p.position !== "K" && p.isStarter && p.showdownRole !== "CPT" && kickoffOk(p.startTime))
+  const lottoPool = board
+    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
     .map((p) => {
       const raw = atdProb(p);
       const match = p.oppQuality === "High" ? 1.1 : p.oppQuality === "Low" ? 0.9 : 1;
@@ -684,9 +730,11 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     fades: fades.slice(0, 3),
     playerProps,
     atdParlay,
+    atdParlay3,
     multiTdParlay,
     lottoTicket,
     sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "SNAPVALUE model", "Public tape + X cappers"],
+    remainingOnly,
   };
 }
 
