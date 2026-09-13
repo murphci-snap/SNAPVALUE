@@ -237,7 +237,7 @@ export function PoolStudio({ games }: { games: Game[] }) {
         <PoolBlock
           kind="survivor"
           title="Survivor"
-          kicker="Pick a winner each week. You cannot reuse a team. Ticket 1 is the floor. Hold future hammers. Skip skinny favorites."
+          kicker="Ticket 1 = safest win. Save true leftover hammers for worse weeks. Skip skinny 3-point favorites."
           games={games}
         />
         <PoolBlock

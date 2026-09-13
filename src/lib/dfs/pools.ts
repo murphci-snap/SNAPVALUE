@@ -94,19 +94,27 @@ function scoreLoser(lose: number, style: EntryStyle, uniqueGame: boolean): numbe
   return s;
 }
 
-function whySurvivor(team: string, opp: string, home: boolean, spread: number | null, win: number, style: EntryStyle): string {
+function whySurvivor(
+  team: string,
+  opp: string,
+  home: boolean,
+  spread: number | null,
+  win: number,
+  style: EntryStyle,
+  isHammer: boolean,
+): string {
   const loc = home ? "at home" : "on the road";
   const line = spread == null ? "" : ` ${formatSpread(spread)}`;
   if (style === "chalk") {
     return `${team}${line} ${loc} vs ${opp} is the cleanest win rate this week (${formatPct(win)}). Ticket 1 is about surviving, not saving.`;
   }
   if (style === "contrarian") {
-    return `${team}${line} is a playable favorite (${formatPct(win)}) that most pools will skip while they hammer bigger names. Unique tickets matter if you last.`;
+    return `${team}${line} is a playable favorite (${formatPct(win)}) that most pools will skip while they pile on bigger names. Unique tickets matter if you last.`;
   }
-  if (win > 0.76) {
-    return `${team}${line} ${loc} should win, but burning a hammer this early costs you later. Only use it if you need the floor.`;
+  if (isHammer) {
+    return `${team}${line} ${loc} vs ${opp} is a top leftover hammer (${formatPct(win)}). You’re spending bench equity — only if this ticket needs the floor.`;
   }
-  return `${team}${line} ${loc} vs ${opp} is strong enough (${formatPct(win)}) without spending LAC/JAX-tier leftovers.`;
+  return `${team}${line} ${loc} vs ${opp} is a real favorite this week (${formatPct(win)}) without sitting in the top leftover hammers.`;
 }
 
 function whyLoser(team: string, opp: string, home: boolean, spread: number | null, lose: number, style: EntryStyle): string {
@@ -125,7 +133,7 @@ function publicNote(kind: PoolKind, winOrLose: number, team: string): string {
   if (kind === "survivor") {
     if (winOrLose >= 0.78) return `Street chalk — a huge share of survivor entries will be on ${team}.`;
     if (winOrLose >= 0.7) return `Popular but not consensus. Fine on a second ticket.`;
-    return `Quieter than the hammers. Good for uniqueness if you trust the spot.`;
+    return `Quieter than the chalk. Good for uniqueness if you trust the spot.`;
   }
   if (winOrLose >= 0.78) return `Public loser-pool chalk. Diversify other tickets off this game.`;
   return `Less crowded than the obvious dogs.`;
@@ -157,6 +165,32 @@ export function buildPoolPlan(
   const picks: PoolPick[] = [];
   const takenTeams = new Set<string>();
   const takenGames = new Set<number>();
+
+  const survivorHammerPool: PoolWatch[] = [];
+  if (kind === "survivor") {
+    for (const g of live) {
+      for (const team of [g.awayAbbr, g.homeAbbr]) {
+        if (!team || usedSet.has(team)) continue;
+        const win = teamWinProb(g, team);
+        if (win == null || win < 0.72) continue;
+        const spread = teamSpread(g, team);
+        survivorHammerPool.push({
+          team,
+          opponent: otherTeam(g, team),
+          spread,
+          rate: win,
+          why: "",
+        });
+      }
+    }
+    survivorHammerPool.sort((a, b) => b.rate - a.rate);
+    survivorHammerPool.splice(3);
+    const rankWord = ["highest", "second-highest", "third-highest"] as const;
+    survivorHammerPool.forEach((row, i) => {
+      row.why = `Top leftover hammer — ${rankWord[i] ?? "high"} win rate still on your bench this week (${formatPct(row.rate)}${row.spread == null ? "" : ` · ${formatSpread(row.spread)}`} vs ${row.opponent}).`;
+    });
+  }
+  const hammerTeams = new Set(survivorHammerPool.map((h) => h.team));
 
   const candidates = (): string[] => {
     const out: string[] = [];
@@ -231,7 +265,7 @@ export function buildPoolPlan(
       kickoff: g.startTime,
       why:
         kind === "survivor"
-          ? whySurvivor(best.team, opp, home, spread, win, style)
+          ? whySurvivor(best.team, opp, home, spread, win, style, hammerTeams.has(best.team) && style !== "chalk")
           : whyLoser(best.team, opp, home, spread, 1 - win, style),
       backup,
       backupWhy,
@@ -243,62 +277,71 @@ export function buildPoolPlan(
   const leftover = NFL_ABBR.filter((t) => !usedSet.has(t) && !takenTeams.has(t));
   const hammers: PoolWatch[] = [];
   const traps: PoolWatch[] = [];
-  for (const team of leftover) {
-    const g = gameOf(live, team);
-    if (!g) continue;
-    const win = teamWinProb(g, team);
-    if (win == null) continue;
-    const spread = teamSpread(g, team);
-    const opp = otherTeam(g, team);
-    const rate = kind === "survivor" ? win : 1 - win;
-    if (kind === "survivor") {
-      if (win >= 0.75) {
-        hammers.push({
+  if (kind === "survivor") {
+    hammers.push(...survivorHammerPool.filter((h) => !takenTeams.has(h.team)));
+    for (const g of live) {
+      for (const team of [g.awayAbbr, g.homeAbbr]) {
+        if (!team || usedSet.has(team) || takenTeams.has(team) || hammerTeams.has(team)) continue;
+        const win = teamWinProb(g, team);
+        if (win == null) continue;
+        const spread = teamSpread(g, team);
+        const skinny = spread != null && spread <= -2.5 && spread >= -3.5;
+        const soft = win >= 0.52 && win <= 0.65;
+        if (!skinny && !soft) continue;
+        traps.push({
+          team,
+          opponent: otherTeam(g, team),
+          spread,
+          rate: win,
+          why: skinny
+            ? `${team} ${formatSpread(spread!)} is a skinny favorite. Looks safe, dies in pools. Sit it out.`
+            : `${team} at ${formatPct(win)} is a soft spot, not a hammer. Don’t force it.`,
+        });
+      }
+    }
+    traps.sort((a, b) => a.rate - b.rate);
+  } else {
+    const dogs: PoolWatch[] = [];
+    for (const team of leftover) {
+      const g = gameOf(live, team);
+      if (!g) continue;
+      const win = teamWinProb(g, team);
+      if (win == null) continue;
+      const spread = teamSpread(g, team);
+      const lose = 1 - win;
+      const opp = otherTeam(g, team);
+      if (lose >= 0.72) {
+        dogs.push({
           team,
           opponent: opp,
           spread,
-          rate: win,
-          why: `${team} ${spread == null ? "" : formatSpread(spread)} vs ${opp} is a future hammer. Do not spend it unless you have to.`,
+          rate: lose,
+          why: `${team} is a true dog. If you have multiple tickets, do not put every entry here.`,
         });
-      } else if (win >= 0.52 && win <= 0.62) {
+      } else if (lose >= 0.52 && lose <= 0.6) {
         traps.push({
           team,
           opponent: opp,
           spread,
-          rate: win,
-          why: `${team} looks “safe” at ${formatPct(win)} and dies in pools every week. Sit it out.`,
+          rate: lose,
+          why: `${team} is a skinny dog. Loser pools bleed out on these.`,
         });
       }
-    } else if (1 - win >= 0.75) {
-      hammers.push({
-        team,
-        opponent: opp,
-        spread,
-        rate: 1 - win,
-        why: `${team} is the true dog. If you have multiple tickets, do not put every entry here.`,
-      });
-    } else if (1 - win >= 0.52 && 1 - win <= 0.6) {
-      traps.push({
-        team,
-        opponent: opp,
-        spread,
-        rate: 1 - win,
-        why: `${team} is a skinny dog. Loser pools bleed out on these.`,
-      });
     }
+    dogs.sort((a, b) => b.rate - a.rate);
+    hammers.push(...dogs.slice(0, 3));
+    traps.sort((a, b) => a.rate - b.rate);
   }
-  hammers.sort((a, b) => b.rate - a.rate);
-  traps.sort((a, b) => a.rate - b.rate);
 
   const note =
     kind === "survivor"
       ? n === 1
-        ? "One ticket: take the win you trust, but try not to spend a future hammer unless the spot is clean."
-        : `${n} tickets: different teams every time. Ticket 1 is the floor. Later tickets trade a little win rate for uniqueness and leftover value.`
+        ? "One ticket: take the safest win this week. True leftover hammers stay on the bench unless the board is ugly."
+        : `${n} tickets: different teams every time. Ticket 1 is this week’s safest win. Later tickets stay unique. Only the top leftover hammers are saved.`
       : n === 1
         ? "One ticket: pick the team most likely to lose. Do not get cute."
         : `${n} tickets: never double a team. Split games so one upset cannot wipe every entry.`;
 
-  return { kind, entries: picks, leftover, hammers: hammers.slice(0, 6), traps: traps.slice(0, 5), note };
+  return { kind, entries: picks, leftover, hammers: hammers.slice(0, 3), traps: traps.slice(0, 5), note };
 }
 
