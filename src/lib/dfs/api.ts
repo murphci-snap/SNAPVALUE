@@ -22,7 +22,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 21;
+const CACHE_VER = 22;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -283,7 +283,12 @@ function espnStats(player: NonNullable<EspnPlayerRow["player"]>, season: number,
     weekProj = emptyWeek();
     weekProj.espnPpr = proj.appliedTotal;
   }
-  return { seasonStats, weekProj };
+  const lastWeek =
+    week >= 2
+      ? stats.find((s) => s.statSourceId === 0 && s.seasonId === season && s.scoringPeriodId === week - 1)
+      : undefined;
+  const lastWeekPts = lastWeek?.appliedTotal ?? 0;
+  return { seasonStats, weekProj, lastWeekPts };
 }
 
 type SlateDataOk = Extract<SlateResponse, { ok: true }>;
@@ -481,7 +486,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         idx.byNameTeam.get(`${n}|${team}|${position}`) ??
         idx.byName.get(n);
 
-      const parsed = ep ? espnStats(ep, season, week) : { seasonStats: null, weekProj: null };
+      const parsed = ep ? espnStats(ep, season, week) : { seasonStats: null, weekProj: null, lastWeekPts: 0 };
       let weekProj = parsed.weekProj;
       if (weekProj) weekProj.dk = dkFromWeek(weekProj, position);
 
@@ -564,6 +569,11 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         projection = fppg * mult * (home ? 1.02 : 1);
       }
       if (!sidelined && questionable) projection *= Q_HAIRCUT;
+      if (!sidelined && week >= 2 && parsed.lastWeekPts >= 2 && !(rankingMethod === "props" && propComplete)) {
+        const rec = parsed.lastWeekPts * (position === "QB" ? 0.88 : 0.94);
+        const w = rankingMethod === "consensus" ? 0.16 : 0.26;
+        projection = (1 - w) * projection + w * rec;
+      }
       projection = Math.max(0, projection);
       if (showdownRole === "CPT") projection *= 1.5;
 
