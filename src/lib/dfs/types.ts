@@ -160,6 +160,8 @@ export interface Player {
   cheapImpact: boolean;
   cheapImpactWhy: string | null;
   showdownRole: ShowdownRole | null;
+  ownership: number | null;
+  ownershipSource: "model" | "site" | null;
 }
 
 export interface SlateOption {

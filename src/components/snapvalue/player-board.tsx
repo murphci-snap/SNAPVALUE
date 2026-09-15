@@ -12,7 +12,7 @@ import { cn, formatPts, formatSalary } from "@/lib/utils";
 import { CheapImpactRack } from "./cheap-impact-rack";
 import { ItFactorRack } from "./it-factor-rack";
 
-type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name";
+type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name" | "ownership";
 
 export function PlayerBoard({
   data,
@@ -68,6 +68,7 @@ export function PlayerBoard({
         if (pd !== 0) return pd;
       }
       if (sort === "name") return mul * a.name.localeCompare(b.name);
+      if (sort === "ownership") return mul * ((a.ownership ?? 0) - (b.ownership ?? 0));
       return mul * ((a[sort] as number) - (b[sort] as number));
     });
   }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly]);
@@ -208,6 +209,9 @@ export function PlayerBoard({
                 <Th onClick={() => toggleSort("value")} active={sort === "value"}>
                   Val {sortIcon("value")}
                 </Th>
+                <Th onClick={() => toggleSort("ownership")} active={sort === "ownership"}>
+                  Own {sortIcon("ownership")}
+                </Th>
                 <Th onClick={() => toggleSort("fppg")} active={sort === "fppg"}>
                   FPPG {sortIcon("fppg")}
                 </Th>
@@ -228,7 +232,7 @@ export function PlayerBoard({
                   <Fragment key={p.id}>
                     {showPos && (
                       <tr className="bg-field">
-                        <td colSpan={8} className="px-3 py-2">
+                        <td colSpan={9} className="px-3 py-2">
                           <span className="display text-sm font-semibold tracking-wide">{p.position}</span>
                           <span className="text-faint ml-2 text-[11px] tracking-wide uppercase">
                             {data.players.filter((x) => x.position === p.position).length} on slate
@@ -267,6 +271,9 @@ export function PlayerBoard({
                     <td className="px-3 font-mono text-sm tabular-nums">{formatPts(p.projection)}</td>
                     <td className={cn("px-3 font-mono text-sm tabular-nums", p.isValuePlay && "text-value")}>
                       {p.value.toFixed(2)}
+                    </td>
+                    <td className="text-muted-foreground px-3 font-mono text-xs tabular-nums">
+                      {p.ownership != null ? `${p.ownership.toFixed(1)}%` : "—"}
                     </td>
                     <td className="text-muted-foreground px-3 font-mono text-xs tabular-nums">
                       {p.fppg.toFixed(1)}

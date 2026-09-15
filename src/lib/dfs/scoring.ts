@@ -203,6 +203,17 @@ export function dkFromProps(line: PropLine, position: Position): { points: numbe
   return { points: Math.max(0, pts), complete: Boolean(hasYards && hasTd) };
 }
 
+/** Complete + 2 books → 0.95. Incomplete never above 0.40. */
+export function propsBlendWeight(complete: boolean, bookCount: number): number {
+  const n = Math.max(0, bookCount);
+  if (complete && n >= 2) return 0.95;
+  if (complete && n >= 1) return 0.82;
+  if (complete) return 0.72;
+  if (n >= 2) return 0.4;
+  if (n >= 1) return 0.32;
+  return 0.22;
+}
+
 export function mean(values: number[]): number | null {
   const xs = values.filter((n) => Number.isFinite(n) && n > 0);
   if (!xs.length) return null;

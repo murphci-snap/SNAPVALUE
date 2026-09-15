@@ -63,28 +63,40 @@ function remainingMin(
   return total;
 }
 
+function ownMul(style: ContestStyle, p: Player): number {
+  const o = (p.ownership ?? 12) / 100;
+  if (style === "milly") return clampOwn(1.16 - o * 0.72);
+  if (style === "doubleup" || style === "small") return clampOwn(0.9 + o * 0.42);
+  return clampOwn(1.05 - o * 0.28);
+}
+
+function clampOwn(n: number): number {
+  return Math.max(0.62, Math.min(1.28, n));
+}
+
 function scorePlayer(style: ContestStyle, p: Player, rng: () => number, valueLean: boolean): number {
   const matchup = p.oppRank >= 20 ? 1.12 : p.oppRank <= 8 ? 0.88 : 1;
   const it = p.itFactor ? 1.14 : 1;
+  const own = ownMul(style, p);
   if (style === "doubleup") {
     const sal = p.salary >= 6500 ? 1.22 : p.salary < 4200 ? 0.52 : 1;
     const dart = p.cheapImpact ? 0.62 : 1;
-    return p.projection ** 1.95 * matchup * it * sal * dart * (0.94 + rng() * 0.08);
+    return p.projection ** 1.95 * matchup * it * sal * dart * own * (0.94 + rng() * 0.08);
   }
   if (style === "small") {
     const sal = p.salary >= 7000 ? 1.18 : p.salary < 4000 ? 0.78 : 1;
-    return p.projection ** 1.72 * matchup * it * sal * (0.92 + rng() * 0.14);
+    return p.projection ** 1.72 * matchup * it * sal * own * (0.92 + rng() * 0.14);
   }
   if (style === "milly") {
     const ceil = p.itFactor ? 1.25 : 1;
     const dart = p.cheapImpact ? 1.38 : 1;
     const fadeChalk = p.salary >= 8500 ? 0.9 : 1;
     const mix = valueLean ? p.value ** 1.45 * Math.max(p.projection, 5) : p.projection ** 1.18;
-    return mix * matchup * ceil * dart * fadeChalk * (0.5 + rng() * 0.95);
+    return mix * matchup * ceil * dart * fadeChalk * own * (0.5 + rng() * 0.95);
   }
   const dart = p.cheapImpact ? 1.16 : 1;
   const core = valueLean ? p.value ** 1.28 * Math.max(p.projection, 5) * dart : p.projection ** 1.42 * it;
-  return core * matchup * (0.78 + rng() * 0.4);
+  return core * matchup * own * (0.78 + rng() * 0.4);
 }
 
 export function generateLineups(

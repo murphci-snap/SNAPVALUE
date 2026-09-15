@@ -3,10 +3,11 @@ import { normalizeName } from "@/lib/utils";
 import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP, SHOWDOWN_POSITIONS } from "./constants";
 import { getJson, settled } from "./http";
 import { markItFactor } from "./it-factor";
+import { markOwnership } from "./ownership";
 import { markCheapImpact } from "./sleeper";
 import { applyGameLines, loadProps, lookupProps } from "./props";
 import { loadCbs, loadFantasyProsEcr, loadSleeper, loadYahoo, lookupSite } from "./projections";
-import { dkFromProps, dkFromWeek, emptyWeek, fillWeek, isQuestionable, isSidelined, matchupMultiplier, Q_HAIRCUT, robustSiteConsensus, round1, round2, seasonFromEspn, weekFromEspn } from "./scoring";
+import { dkFromProps, dkFromWeek, emptyWeek, fillWeek, isQuestionable, isSidelined, matchupMultiplier, propsBlendWeight, Q_HAIRCUT, robustSiteConsensus, round1, round2, seasonFromEspn, weekFromEspn } from "./scoring";
 import type {
   DataSourceInfo,
   DefenseProfile,
@@ -22,7 +23,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 22;
+const CACHE_VER = 23;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -555,12 +556,17 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         projection = 0;
       } else if (propProjection != null) {
         rankingMethod = "props";
+        const books = props?.books ? [...props.books].length : 0;
+        const w = propsBlendWeight(propComplete, books);
         if (consensusProjection != null) {
-          const w = propComplete ? 0.95 : 0.4;
           projection = w * propProjection + (1 - w) * consensusProjection;
-          if (!propComplete) rankingMethod = "consensus";
+          if (w < 0.75) rankingMethod = "consensus";
         } else {
-          projection = propProjection;
+          projection = propComplete ? propProjection : propProjection * 0.88 + (fppg * mult) * 0.12;
+        }
+        if (!sidelined && week >= 2 && parsed.lastWeekPts >= 2 && w < 0.9) {
+          const rec = parsed.lastWeekPts * (position === "QB" ? 0.88 : 0.94);
+          projection = 0.86 * projection + 0.14 * rec;
         }
       } else if (consensusProjection != null) {
         rankingMethod = siteRows.length >= 2 ? "consensus" : "consensus";
@@ -569,10 +575,10 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         projection = fppg * mult * (home ? 1.02 : 1);
       }
       if (!sidelined && questionable) projection *= Q_HAIRCUT;
-      if (!sidelined && week >= 2 && parsed.lastWeekPts >= 2 && !(rankingMethod === "props" && propComplete)) {
+      if (!sidelined && week >= 2 && parsed.lastWeekPts >= 2 && rankingMethod !== "props") {
         const rec = parsed.lastWeekPts * (position === "QB" ? 0.88 : 0.94);
-        const w = rankingMethod === "consensus" ? 0.16 : 0.26;
-        projection = (1 - w) * projection + w * rec;
+        const rw = rankingMethod === "consensus" ? 0.16 : 0.26;
+        projection = (1 - rw) * projection + rw * rec;
       }
       projection = Math.max(0, projection);
       if (showdownRole === "CPT") projection *= 1.5;
@@ -635,6 +641,8 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         cheapImpact: false,
         cheapImpactWhy: null,
         showdownRole,
+        ownership: null,
+        ownershipSource: null,
       });
     }
 
@@ -666,6 +674,9 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         else if (p.position === "DST") p.isStarter = true;
         else p.isStarter = p.salary >= maxSal * 0.55 || p.salary >= 4500;
       }
+    }
+    for (const p of players) {
+      if (isSidelined(p.injury, p.status)) p.isStarter = false;
     }
 
     const dvp = {} as Record<Position, DefenseProfile[]>;
@@ -704,6 +715,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
 
     markItFactor(players, games);
     markCheapImpact(players);
+    markOwnership(players);
     players.sort((a, b) => b.projection - a.projection || b.salary - a.salary);
 
     const trimmed = players.filter((p) => {
@@ -726,6 +738,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       { id: "cbs", label: "CBS Sports", ok: cbsIdx.ok, players: cbsIdx.players },
       { id: "fantasypros", label: "FantasyPros + X", ok: fpIdx.ok, players: fpIdx.players },
       { id: "rotowire", label: "RotoWire", ok: sleeperIdx.ok, players: sleeperIdx.players },
+      { id: "own", label: "Own% model", ok: trimmed.some((p) => p.ownership != null), players: trimmed.filter((p) => p.ownership != null).length },
     ];
 
     const value = compactSlate({
