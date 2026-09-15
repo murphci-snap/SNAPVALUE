@@ -1,7 +1,7 @@
 import type { Player, Position } from "./types";
 import { isSidelined } from "./scoring";
 
-const CHEAP: Position[] = ["QB", "RB", "WR", "TE"];
+const CHEAP: Position[] = ["RB", "WR", "TE"];
 const SOFT: Record<Position, number> = { QB: 5500, RB: 5000, WR: 5000, TE: 5000, DST: 3000, K: 4500 };
 const TYPICAL: Record<Position, number> = { QB: 2.35, RB: 2.05, WR: 2.05, TE: 2.0, DST: 1.6, K: 1.8 };
 const TAKE = 1;
@@ -18,7 +18,7 @@ function poolFor(players: Player[], pos: Position): Player[] {
   if (!eligible.length) return [];
   const cap = SOFT[pos] ?? 5000;
   const under = eligible.filter((p) => p.salary <= cap);
-  const floor = pos === "TE" ? 4 : pos === "QB" ? 8 : 5;
+  const floor = pos === "TE" ? 4 : 5;
   const pool = (under.length ? under : eligible).filter((p) => p.projection >= floor);
   if (pool.length) return pool;
   return [...eligible].sort((a, b) => a.salary - b.salary || b.value - a.value).slice(0, 8);
@@ -55,5 +55,5 @@ export function markCheapImpact(players: Player[]) {
   }
 }
 
-export const CHEAP_IMPACT_POS: Position[] = ["QB", "RB", "WR", "TE"];
+export const CHEAP_IMPACT_POS: Position[] = ["RB", "WR", "TE"];
 export const BARGAIN_TAKE = TAKE;
