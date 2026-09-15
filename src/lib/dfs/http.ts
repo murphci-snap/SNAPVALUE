@@ -5,7 +5,7 @@ const DK_HEADERS: Record<string, string> = {
   Accept: "application/json, text/plain, */*",
   "Accept-Language": "en-US,en;q=0.9",
   Origin: "https://www.draftkings.com",
-  Referer: "https://www.draftkings.com/lobby#/NFL",
+  Referer: "https://www.draftkings.com/lobby",
 };
 
 function headersFor(url: string, extra?: HeadersInit): Record<string, string> {

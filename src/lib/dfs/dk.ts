@@ -113,18 +113,21 @@ function lobbyToGroup(g: LobbyGroup): DkGroup {
 
 export async function loadDkGroups(): Promise<DkGroup[]> {
   try {
-    const lobby = await getJson<{ DraftGroups?: LobbyGroup[] }>(
-      "https://www.draftkings.com/lobby/getcontests?sport=NFL",
+    const api = await getJson<{ draftGroups?: DkGroup[] }>(
+      "https://api.draftkings.com/sites/US-DK/draftgroups/v1/?sport=NFL",
       undefined,
-      18000,
+      14000,
     );
-    const groups = (lobby.DraftGroups ?? []).map(lobbyToGroup).filter((g) => g.draftGroupId);
-    if (groups.length) return groups;
+    if (api.draftGroups?.length) return api.draftGroups;
   } catch {
-    /* try api */
+    /* lobby fallback */
   }
-  const api = await getJson<{ draftGroups?: DkGroup[] }>("https://api.draftkings.com/draftgroups/v1/?sport=NFL", undefined, 12000);
-  return api.draftGroups ?? [];
+  const lobby = await getJson<{ DraftGroups?: LobbyGroup[] }>(
+    "https://www.draftkings.com/lobby/getcontests?sport=NFL",
+    undefined,
+    18000,
+  );
+  return (lobby.DraftGroups ?? []).map(lobbyToGroup).filter((g) => g.draftGroupId);
 }
 
 function mapLobbyPlayers(
@@ -187,19 +190,21 @@ export async function loadDkDraftables(draftGroupId: number): Promise<{
   competitions: DkCompetition[];
 }> {
   try {
-    const lobby = await getJson<{ playerList?: LobbyPlayer[]; teamList?: Record<string, LobbyTeam> }>(
-      `https://www.draftkings.com/lineup/getavailableplayers?draftGroupId=${draftGroupId}`,
+    const api = await getJson<{ draftables: DkDraftable[]; competitions: DkCompetition[] }>(
+      `https://api.draftkings.com/sites/US-DK/draftgroups/v1/draftgroups/${draftGroupId}/draftables`,
       undefined,
-      18000,
+      16000,
     );
-    if (lobby.playerList?.length) return mapLobbyPlayers(lobby.playerList, lobby.teamList ?? {});
+    if (api.draftables?.length) {
+      return { draftables: api.draftables, competitions: api.competitions ?? [] };
+    }
   } catch {
-    /* try api */
+    /* lobby fallback */
   }
-  const api = await getJson<{ draftables: DkDraftable[]; competitions: DkCompetition[] }>(
-    `https://api.draftkings.com/draftgroups/v1/draftgroups/${draftGroupId}/draftables`,
+  const lobby = await getJson<{ playerList?: LobbyPlayer[]; teamList?: Record<string, LobbyTeam> }>(
+    `https://www.draftkings.com/lineup/getavailableplayers?draftGroupId=${draftGroupId}`,
     undefined,
-    14000,
+    18000,
   );
-  return { draftables: api.draftables ?? [], competitions: api.competitions ?? [] };
+  return mapLobbyPlayers(lobby.playerList ?? [], lobby.teamList ?? {});
 }
