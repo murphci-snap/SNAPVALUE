@@ -462,3 +462,19 @@ export function lineupAsText(lineup: Lineup): string {
   );
   return lines.join("\n");
 }
+
+function dkCell(p: Player): string {
+  const id = p.dkId || p.id;
+  return `${p.name} (${id})`;
+}
+
+export function lineupAsDkPaste(lineup: Lineup, format: SlateFormat): string {
+  return lineup.players.map((lp) => dkCell(lp.player)).join(",");
+}
+
+export function lineupsAsDkCsv(lineups: Lineup[], format: SlateFormat): string {
+  const header =
+    format === "showdown" ? "CPT,FLEX,FLEX,FLEX,FLEX,FLEX" : "QB,RB,RB,WR,WR,WR,TE,FLEX,DST";
+  const rows = lineups.map((lu) => lu.players.map((lp) => dkCell(lp.player)).join(","));
+  return [header, ...rows].join("\n");
+}

@@ -1,9 +1,9 @@
-import { Copy, Lock, RefreshCw, Sparkles, Unlock } from "lucide-react";
+import { Copy, Download, Lock, RefreshCw, Sparkles, Unlock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { reviewLineup, slateReviewReady, type CashVerdict } from "@/lib/dfs/cash-review";
-import { CONTEST_META, generateLineups, lineupAsText, type ContestStyle } from "@/lib/dfs/optimizer";
+import { CONTEST_META, generateLineups, lineupAsDkPaste, lineupsAsDkCsv, type ContestStyle } from "@/lib/dfs/optimizer";
 import { SLOT_LABEL } from "@/lib/dfs/constants";
 import type { Game, Lineup, Player, SlateFormat } from "@/lib/dfs/types";
 import { cn, formatPts, formatUsd } from "@/lib/utils";
@@ -39,6 +39,7 @@ export function LineupStudio({
   const [contest, setContest] = useState<ContestStyle>("single");
   const [seed, setSeed] = useState(1);
   const [copied, setCopied] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
   const reviewDefault = useMemo(() => slateReviewReady(players), [players]);
   const [reviewOn, setReviewOn] = useState(reviewDefault);
   const showdown = format === "showdown";
@@ -59,9 +60,26 @@ export function LineupStudio({
   );
 
   function copy(lineup: Lineup) {
-    void navigator.clipboard.writeText(lineupAsText(lineup));
+    void navigator.clipboard.writeText(lineupAsDkPaste(lineup, format));
     setCopied(lineup.id);
     window.setTimeout(() => setCopied(null), 1400);
+  }
+
+  function copyAll() {
+    const csv = lineupsAsDkCsv(lineups, format);
+    void navigator.clipboard.writeText(csv);
+    setCopiedAll(true);
+    window.setTimeout(() => setCopiedAll(false), 1400);
+  }
+
+  function exportCsv() {
+    const csv = lineupsAsDkCsv(lineups, format);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `snapvalue-${showdown ? "showdown" : "classic"}-wk.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   return (
@@ -100,6 +118,18 @@ export function LineupStudio({
             <RefreshCw />
             Shuffle
           </Button>
+          {lineups.length ? (
+            <>
+              <Button variant="secondary" size="sm" onClick={exportCsv}>
+                <Download />
+                CSV
+              </Button>
+              <Button variant="secondary" size="sm" onClick={copyAll}>
+                <Copy />
+                {copiedAll ? "Copied" : "Copy all"}
+              </Button>
+            </>
+          ) : null}
         </div>
       </header>
 

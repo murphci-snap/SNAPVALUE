@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { buildWeeklyDesk, type DeskBet } from "@/lib/dfs/desk";
+import { ledgerSummary, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
 import { formatAmerican, formatPct } from "@/lib/dfs/markets";
 import type { Game, Player } from "@/lib/dfs/types";
 
@@ -59,11 +60,87 @@ function PropCard({ bet, kicker }: { bet: DeskBet; kicker: string }) {
   );
 }
 
-export function BetDesk({ games, players }: { games: Game[]; players: Player[] }) {
+export function BetDesk({
+  games,
+  players,
+  week,
+  season,
+}: {
+  games: Game[];
+  players: Player[];
+  week: number;
+  season: number;
+}) {
   const desk = useMemo(() => buildWeeklyDesk(games, players), [games, players]);
+  const [ledger, setLedger] = useState<GradedBet[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setLedger(settleDesk({ desk, games, players, week, season }));
+  }, [desk, games, players, week, season]);
+
+  const rec = useMemo(() => ledgerSummary(ledger, week, season), [ledger, week, season]);
 
   return (
     <div className="flex flex-col gap-10">
+      <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p className="text-faint text-[10px] tracking-[0.18em] uppercase">Track record</p>
+            <h2 className="display text-2xl leading-none font-semibold">
+              WK {week} {rec.week.w}-{rec.week.l}
+              <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
+                season {rec.season.w}-{rec.season.l}
+              </span>
+            </h2>
+          </div>
+          <p className="font-mono text-sm tabular-nums">
+            <span className={rec.season.units >= 0 ? "text-value" : "text-warn"}>
+              {rec.season.units >= 0 ? "+" : ""}
+              {rec.season.units.toFixed(2)}u
+            </span>
+            <span className="text-muted-foreground">
+              {" "}
+              · {rec.season.w + rec.season.l ? `${Math.round(rec.season.hit * 100)}%` : "—"} hit
+            </span>
+          </p>
+        </div>
+        {Object.keys(rec.byMarket).length ? (
+          <p className="text-muted-foreground mt-2 font-mono text-[11px]">
+            {Object.entries(rec.byMarket)
+              .map(([k, v]) => `${k} ${v.w}-${v.l}`)
+              .join(" · ")}
+          </p>
+        ) : (
+          <p className="text-muted-foreground mt-2 text-xs">Grades when games are final. Nothing settled yet.</p>
+        )}
+        {rec.weekRows.length ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="text-faint mt-3 text-xs tracking-wide uppercase"
+          >
+            {open ? "Hide week" : "This week’s grades"}
+          </button>
+        ) : null}
+        {open ? (
+          <ol className="mt-3 flex flex-col gap-1.5">
+            {rec.weekRows.map((b) => (
+              <li key={b.id} className="flex items-baseline justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate">
+                  <span className="text-faint mr-2 font-mono text-[10px] uppercase">{b.market}</span>
+                  {b.pick}
+                </span>
+                <span className={`shrink-0 font-mono text-xs tabular-nums ${b.result === "win" ? "text-value" : b.result === "loss" ? "text-warn" : "text-muted-foreground"}`}>
+                  {b.result} {b.pnl > 0 ? "+" : ""}
+                  {b.pnl.toFixed(2)}u
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </section>
+
       <p className="text-muted-foreground max-w-2xl text-sm">
         Units scale with edge: props and 2-leg ATD 0.25–0.75u. Totals only go to 1u on a large gap.
         3-leg ATD / 2+ TD 0.1–0.25u. Lotto 0.1u. Sits are 0u. Fun only.

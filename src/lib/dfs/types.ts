@@ -39,6 +39,8 @@ export interface Game {
   spread: number | null;
   homeImplied: number | null;
   awayImplied: number | null;
+  homeScore: number | null;
+  awayScore: number | null;
 }
 
 export interface SeasonStats {
@@ -164,6 +166,15 @@ export interface Player {
   ownershipSource: "model" | "site" | null;
   /** Base DK pts from this week's box (CPT not yet 1.5×). */
   actualDk: number | null;
+  actualBox: {
+    passYds: number;
+    rushYds: number;
+    recYds: number;
+    receptions: number;
+    rushTd: number;
+    recTd: number;
+    passTd: number;
+  } | null;
 }
 
 export interface SlateOption {

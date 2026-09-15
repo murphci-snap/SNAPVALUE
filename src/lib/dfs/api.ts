@@ -23,7 +23,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 26;
+const CACHE_VER = 27;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -316,6 +316,41 @@ const EMPTY_PROPS: Awaited<ReturnType<typeof loadProps>> = {
   byEspnId: new Map(),
 };
 
+async function loadScoreboard(season: number, week: number, seasonType: string) {
+  const st = seasonType === "post" || seasonType === "playoff" ? 3 : seasonType === "pre" ? 1 : 2;
+  const json = await getJson<{
+    events?: {
+      competitions?: {
+        status?: { type?: { completed?: boolean; state?: string } };
+        competitors?: { homeAway: string; score: string; team?: { abbreviation?: string } }[];
+      }[];
+    }[];
+  }>(
+    `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&year=${season}&seasontype=${st}`,
+    undefined,
+    8000,
+  );
+  const out = new Map<string, { home: number; away: number; final: boolean }>();
+  for (const ev of json.events ?? []) {
+    const c = ev.competitions?.[0];
+    if (!c?.competitors) continue;
+    const home = c.competitors.find((x) => x.homeAway === "home");
+    const away = c.competitors.find((x) => x.homeAway === "away");
+    const ha = (home?.team?.abbreviation ?? "").toUpperCase();
+    const aa = (away?.team?.abbreviation ?? "").toUpperCase();
+    if (!ha || !aa) continue;
+    const hs = Number.parseFloat(home?.score ?? "");
+    const as = Number.parseFloat(away?.score ?? "");
+    const final = Boolean(c.status?.type?.completed) || c.status?.type?.state === "post";
+    out.set(`${aa}@${ha}`, {
+      home: Number.isFinite(hs) ? hs : 0,
+      away: Number.isFinite(as) ? as : 0,
+      final,
+    });
+  }
+  return out;
+}
+
 function compactSlate(value: SlateDataOk): SlateDataOk {
   const raw = JSON.stringify(value, (_k, v) => {
     if (typeof v === "number" && Number.isFinite(v) && !Number.isInteger(v)) return Math.round(v * 10) / 10;
@@ -413,7 +448,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       },
     });
 
-    const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, sleeperIdx, propsBundle] = await Promise.all([
+    const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, sleeperIdx, propsBundle, scores] = await Promise.all([
       getJson<{ draftables: DkDraftable[]; competitions: DkCompetition[] }>(
         `https://api.draftkings.com/draftgroups/v1/draftgroups/${selected.draftGroupId}/draftables`,
       ),
@@ -429,6 +464,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       fpP,
       sleeperP,
       propsP,
+      withTimeout(settled(loadScoreboard(season, week, state.season_type)).then((v) => v ?? new Map()), 9000, new Map()),
     ]);
 
     const idx = espnIndex(espnJson?.players ?? []);
@@ -450,10 +486,20 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         spread: null,
         homeImplied: null,
         awayImplied: null,
+        homeScore: null,
+        awayScore: null,
       };
     });
     games.sort((a, b) => a.startTime.localeCompare(b.startTime));
     applyGameLines(games, propsBundle.games);
+    for (const g of games) {
+      const row =
+        scores.get(`${g.awayAbbr}@${g.homeAbbr}`) ??
+        scores.get(`${g.awayAbbr.toUpperCase()}@${g.homeAbbr.toUpperCase()}`);
+      if (!row) continue;
+      g.homeScore = row.home;
+      g.awayScore = row.away;
+    }
 
     const dstSeason = new Map<string, ReturnType<typeof seasonFromEspn>>();
     for (const [abbr, ep] of idx.dstByAbbr) {
@@ -659,6 +705,17 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         ownership: null,
         ownershipSource: null,
         actualDk,
+        actualBox: parsed.weekActual
+          ? {
+              passYds: parsed.weekActual.passYds,
+              rushYds: parsed.weekActual.rushYds,
+              recYds: parsed.weekActual.recYds,
+              receptions: parsed.weekActual.receptions,
+              rushTd: parsed.weekActual.rushTd,
+              recTd: parsed.weekActual.recTd,
+              passTd: parsed.weekActual.passTd,
+            }
+          : null,
       });
     }
 
