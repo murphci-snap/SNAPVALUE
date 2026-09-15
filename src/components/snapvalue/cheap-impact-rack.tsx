@@ -26,17 +26,20 @@ export function CheapImpactRack({
         <p className="text-value text-[11px] tracking-[0.16em] uppercase">Bang for the buck</p>
       </div>
       <p className="text-muted-foreground mb-3 max-w-2xl text-sm">
-        Cheap salary, still useful in Classic as FLEX or the last skill slot. One cheap RB / WR / TE — QB is not
-        FLEX-eligible. Overlap with Best Value is OK.
+        Cheap bang for the buck. One streaming QB (own slot — not FLEX) plus one cheap RB / WR / TE for FLEX or the
+        last skill slot. Overlap with Best Value is OK.
       </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {groups.map((group) => {
           const p = group.players[0];
+          const qb = group.pos === "QB";
           return (
             <div key={group.pos} className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <h3 className="display text-lg leading-none font-semibold">{group.pos}</h3>
-                <span className="text-faint text-[10px] tracking-[0.16em] uppercase">Bargain</span>
+                <span className="text-faint text-[10px] tracking-[0.16em] uppercase">
+                  {qb ? "Stream" : "FLEX"}
+                </span>
               </div>
               {!p ? (
                 <p className="text-muted-foreground text-xs">No cheap names on this slate.</p>
