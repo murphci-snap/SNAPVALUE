@@ -129,14 +129,45 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function booksFor(game: Game): string {
+function booksFor(game: Game, board: Player[] = []): string {
   const labels = new Set<string>();
-  if (game.spread != null || game.total != null) {
-    labels.add("Vegas");
-    labels.add("FanDuel");
+  for (const p of board) {
+    if (p.team !== game.homeAbbr && p.team !== game.awayAbbr) continue;
+    for (const b of p.props?.books ?? []) {
+      const t = b.trim();
+      if (t) labels.add(t);
+    }
   }
+  if (!labels.size && (game.spread != null || game.total != null)) labels.add("Vegas");
   return [...labels].join(" · ") || "Books";
 }
+
+function propUnit(edge: number): string {
+  if (edge >= 0.12) return "0.75u";
+  if (edge >= 0.09) return "0.5u";
+  return "0.25u";
+}
+
+function atd2Unit(edgeSum: number): string {
+  if (edgeSum >= 0.14) return "0.75u";
+  if (edgeSum >= 0.08) return "0.5u";
+  return "0.25u";
+}
+
+function totalUnit(gap: number): string {
+  if (Math.abs(gap) >= 3.5) return "1u";
+  if (Math.abs(gap) >= 2.4) return "0.5u";
+  return "0.25u";
+}
+
+function atsUnit(edge: number): string {
+  if (edge >= 0.1) return "1u";
+  if (edge >= 0.075) return "0.5u";
+  return "0.25u";
+}
+
+const ATS_FLOOR = 0.065;
+const ML_FLOOR = 0.05;
 
 function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge: number; why: string } | null {
   if (game.spread == null) return null;
@@ -177,6 +208,8 @@ function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge:
 
   const side: "home" | "away" = homeEdge >= 0 ? "home" : "away";
   const edge = Math.abs(homeEdge) + Math.abs(homeP - 0.5) * 0.08;
+  if (edge < ATS_FLOOR) return null;
+  if (bits.length <= 1 && bits[0]?.includes("home dog") && edge < 0.08) return null;
   const team = side === "home" ? game.homeAbbr : game.awayAbbr;
   const spread = side === "home" ? game.spread : -game.spread;
   const why =
@@ -276,7 +309,7 @@ function propCard(
     tape: over
       ? "Public leans overs on star skill. Need a real gap vs an independent number."
       : "Under only with a real gap. Casual money still hammers the over.",
-    unit: "0.5u",
+    unit: propUnit(edge),
   };
 }
 
@@ -376,9 +409,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   const board = players.filter((p) => {
     if (p.showdownRole === "CPT") return false;
     if (p.position === "K") return false;
-    if (!liveTeams.has(p.team)) return false;
-    const g = gameOfPlayer(p, live) ?? gameOf(p, live);
-    if (g && !isUpcoming(g)) return false;
+    const gAll = gameOf(p, games);
+    if (gAll && !isUpcoming(gAll)) return false;
+    if (!liveTeams.has(p.team) && gAll) return false;
     const t = Date.parse(p.startTime);
     if (Number.isFinite(t) && t <= Date.now() - 8 * 60 * 1000) return false;
     return true;
@@ -387,7 +420,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   const totals: DeskBet[] = [];
 
   for (const g of live) {
-    const a = scoreAts(g, players);
+    const a = scoreAts(g, board);
     if (a) {
       const team = a.side === "home" ? g.homeAbbr : g.awayAbbr;
       const spread = a.side === "home" ? g.spread! : -g.spread!;
@@ -400,18 +433,19 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         edge: a.edge,
         confidence: Math.round(52 + a.edge * 180),
         why: a.why,
-        books: booksFor(g),
+        books: booksFor(g, board),
         tape:
           Math.abs(spread) >= 7
             ? "Heavy public favorite for spreads and survivor. Only lean this side if anytime-TD / scoring prices also back a cover — not just the spread."
             : Math.abs(spread) <= 3
               ? "Short favorites get bet just because the number looks small. Only take it if the matchup or TD prices actually disagree with the market."
               : "Mid-range number — books and public usually split. Lean it only with a real mismatch.",
-        unit: "1u",
+        unit: atsUnit(a.edge),
       });
     }
-    const t = scoreTotal(g, players);
+    const t = scoreTotal(g, board);
     if (t && g.total != null) {
+      const gap = t.expected - g.total;
       totals.push({
         id: `ou-${g.id}`,
         title: `${t.pick === "over" ? "Over" : "Under"} ${g.total}`,
@@ -421,11 +455,11 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         edge: t.edge,
         confidence: Math.round(51 + t.edge * 160),
         why: t.why,
-        books: booksFor(g),
+        books: booksFor(g, board),
         tape: t.pick === "over"
           ? "Overs are the public side. Need implied points (not just ATD juice) to clear a 2-point gap."
           : "Unders need a real gap vs implied, or outdoor weather. No forced 1u under.",
-        unit: "1u",
+        unit: totalUnit(gap),
       });
     }
   }
@@ -433,16 +467,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   ats.sort((a, b) => b.edge - a.edge);
   totals.sort((a, b) => b.edge - a.edge);
 
-  const unders = totals.filter((t) => /^under/i.test(t.pick));
-  const overs = totals.filter((t) => /^over/i.test(t.pick));
   const spreadLock = ats[0] ?? null;
-  const bestBets: DeskBet[] = [];
-  if (spreadLock) bestBets.push(spreadLock);
-  if (unders[0]) bestBets.push(unders[0]);
-  if (overs[0] && bestBets.length < 3) bestBets.push(overs[0]);
-  if (ats[1] && bestBets.length < 3) bestBets.push(ats[1]);
-  if (unders[1] && bestBets.length < 3) bestBets.push(unders[1]);
-  if (ats[2] && bestBets.length < 3) bestBets.push(ats[2]);
+  const bestBets = [...ats, ...totals].sort((a, b) => b.edge - a.edge).slice(0, 3);
 
   const playerProps = [
     bestProp(board, live, "QB", "pass", (p) => p.props?.passYds),
@@ -539,6 +565,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       combinedProb: combined,
       why: `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
       tape: "Mid-board ATD (roughly 28–42%) with a real edge beats a −150 chalk name. Cross-game only.",
+      unit: atd2Unit(a.edge + b.edge),
     };
   }
 
@@ -574,8 +601,10 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   let atdParlay3: TdParlay | null = null;
   if (triple) {
     const combined = parlayProb(triple.map((x) => x.prob));
+    const edgeSum = triple.reduce((s, x) => s + x.edge, 0);
+    const unit = edgeSum >= 0.12 ? "0.25u" : "0.1u";
     atdParlay3 = {
-      unit: "0.25u",
+      unit,
       legs: triple.map((x) => ({
         name: x.p.name,
         team: x.p.team,
@@ -587,7 +616,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
       why: "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
-      tape: "0.25u. Mid-board names. One miss kills it.",
+      tape: `${unit} cap. Mid-board names. One miss kills it.`,
     };
   }
 
@@ -638,19 +667,15 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   }
 
   function pickMultiPair(): [MultiRow, MultiRow] | null {
-    const multi = multiRows.filter((x) => x.kind === "multi_td");
-    for (const avoid of [true, false]) {
-      for (let i = 0; i < multi.length; i++) {
-        for (let j = i + 1; j < multi.length; j++) {
-          if (okPair(multi[i]!, multi[j]!, avoid)) return [multi[i]!, multi[j]!];
-        }
-      }
-    }
-    for (const avoid of [true, false]) {
-      for (const a of multi) {
-        for (const b of multiRows) {
-          if (a === b || b.kind !== "atd") continue;
-          if (okPair(a, b, avoid)) return [a, b];
+    const ranked = [...multiRows].sort((a, b) => Number(b.priced) - Number(a.priced) || b.s - a.s);
+    const multi = ranked.filter((x) => x.kind === "multi_td");
+    for (const needPriced of [true, false]) {
+      const pool = needPriced ? multi.filter((x) => x.priced) : multi;
+      for (const avoid of [true, false]) {
+        for (let i = 0; i < pool.length; i++) {
+          for (let j = i + 1; j < pool.length; j++) {
+            if (okPair(pool[i]!, pool[j]!, avoid)) return [pool[i]!, pool[j]!];
+          }
         }
       }
     }
@@ -663,9 +688,10 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     const [a, b] = multiPair;
     const combined = parlayProb([a.prob, b.prob]);
     const bothMulti = a.kind === "multi_td" && b.kind === "multi_td";
-    const thin = bothMulti && (!a.priced || !b.priced);
-    const unit = a.priced && b.priced && bothMulti ? "0.5u" : "0.25u";
-    const label = (row: MultiRow) => (row.kind === "multi_td" ? "2+ TD" : "ATD");
+    const thin = !a.priced || !b.priced;
+    const unit = a.priced && b.priced ? "0.25u" : "0.1u";
+    const label = (row: MultiRow) =>
+      row.kind === "multi_td" ? (row.priced ? "2+ TD" : "2+ TD · model lean") : "ATD";
     multiTdParlay = {
       unit,
       legs: [a, b].map((row) => ({
@@ -676,14 +702,14 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         prob: row.prob,
         kind: row.kind,
         marketLabel: label(row),
-        why: `${row.p.position} · ${row.p.team} ${row.p.home ? "vs" : "@"} ${row.p.opponent} · ${label(row)}${row.kind === "multi_td" && !row.priced ? " · price thin — model lean" : ""}`,
+        why: `${row.p.position} · ${row.p.team} ${row.p.home ? "vs" : "@"} ${row.p.opponent} · ${label(row)}${row.kind === "multi_td" && !row.priced ? " — no posted 2+ price, Poisson from ATD" : ""}`,
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
       why: bothMulti
-        ? `Two independent games. Each player 2+ TDs. Prefer RBs. Not a same-game parlay.${thin ? " 2+ books are thin — prices are model leans from ATD / TD lines." : ""}`
-        : "One 2+ TD leg mixed with an anytime TD on a second game. Cross-game only. Not SGP.",
-      tape: `${unit} longshot vs the ATD two-leg. One miss kills it. Fun only.`,
+        ? `Two independent games. Each 2+ TDs. Prefer booked 2+ markets.${thin ? " One or both legs are model leans — not a posted 2+ price." : ""}`
+        : "Priced 2+ board was thin. Cross-game only. Not SGP.",
+      tape: `${unit} cap. Longshot vs the ATD two-leg. One miss kills it.`,
     };
   }
 
@@ -719,12 +745,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         opponent: x.p.opponent,
         american: x.american,
         prob: x.prob,
-        why: `${x.p.position} · ${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}${x.p.itFactor ? " · IT Factor" : ""}`,
+        why: `${x.p.position} · ${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}`,
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Five independent games. Long-shot ATD parlay — one miss kills it. Fun only, tiny unit.",
-      tape: "Lotto construction: mid-price ATD names, no same-game stack, mix of smash spots and streamer darts from the public X tape.",
+      why: "Five independent games. Long-shot ATD parlay — one miss kills it. Fun only, 0.1u cap.",
+      tape: "Lotto: mid-price ATD names, no same-game stack. No IT / bargain juice in the score.",
+      unit: "0.1u",
     };
   }
 
@@ -736,10 +763,11 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     const abs = Math.abs(g.spread);
     if (abs < 2.5 || abs > 9.5) continue;
     const dogWin = teamWinProb(g, dog) ?? 0.4;
-    const dogTd = impliedTdShare(players, dog);
-    const favTd = impliedTdShare(players, fav);
+    const dogTd = impliedTdShare(board, dog);
+    const favTd = impliedTdShare(board, fav);
     if (dogTd + 0.05 < favTd) continue;
     const edge = 0.03 + Math.max(0, dogTd - favTd) * 0.08 + (abs >= 6 && dogTd >= favTd ? 0.02 : 0);
+    if (edge < ML_FLOOR) continue;
     mlDogs.push({
       id: `ml-${g.id}`,
       title: `${dog} ML`,
@@ -749,9 +777,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       edge,
       confidence: Math.round(50 + edge * 140),
       why: `${dog} is a playable dog (${formatPct(dogWin)}). TD prices are not a wipeout versus ${fav}. Live-dog moneyline, not a desperate +10.`,
-      books: booksFor(g),
+      books: booksFor(g, board),
       tape: "Public lives on favorites. A mid-range dog with TD equity is the plus-money we want.",
-      unit: "0.5u",
+      unit: edge >= 0.07 ? "0.5u" : "0.25u",
     });
   }
   mlDogs.sort((a, b) => b.edge - a.edge);
@@ -763,8 +791,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     const abs = Math.abs(g.spread);
     const fav = g.spread < 0 ? g.homeAbbr : g.awayAbbr;
     const dog = g.spread < 0 ? g.awayAbbr : g.homeAbbr;
-    const favTd = impliedTdShare(players, fav);
-    const dogTd = impliedTdShare(players, dog);
+    const favTd = impliedTdShare(board, fav);
+    const dogTd = impliedTdShare(board, dog);
     if (abs >= 2.5 && abs <= 3.5 && Math.abs(favTd - dogTd) < 0.12) {
       fades.push({
         id: `fade-short-${g.id}`,
@@ -775,13 +803,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         edge: 0.05,
         confidence: 58,
         why: `Short favorite in a coin-flip TD market. Casual money will still pile on ${fav}. We stand down.`,
-        books: booksFor(g),
-        tape: "Classic trap number. No bet is the bet.",
+        books: booksFor(g, board),
+        tape: "Classic trap number. Sit = 0u.",
         unit: "0u",
       });
     }
     if (g.total != null && g.total >= 48) {
-      const { expected } = expectedTotal(g, players);
+      const { expected } = expectedTotal(g, board);
       if (expected < g.total - 1.5) {
         fades.push({
           id: `fade-over-${g.id}`,
@@ -792,8 +820,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           edge: 0.04,
           confidence: 55,
           why: `Posted ${g.total} is a public magnet. Model total ${expected.toFixed(1)}.`,
-          books: booksFor(g),
-          tape: "Do not chase the shootout just because the number is loud.",
+          books: booksFor(g, board),
+          tape: "Do not chase the shootout just because the number is loud. Sit = 0u.",
           unit: "0u",
         });
       }
@@ -802,7 +830,10 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   fades.sort((a, b) => b.edge - a.edge);
 
   return {
-    bestBets: bestBets.slice(0, 3).map((b, i) => ({ ...b, confidence: clampConf(b.confidence, i), unit: b.unit || "1u" })),
+    bestBets: bestBets
+      .filter((b) => b.unit !== "0u")
+      .slice(0, 3)
+      .map((b, i) => ({ ...b, confidence: clampConf(b.confidence, i), unit: b.unit || "0.25u" })),
     spreadLock,
     moneylineDog,
     fades: fades.slice(0, 3),

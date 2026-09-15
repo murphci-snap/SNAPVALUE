@@ -65,8 +65,8 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
   return (
     <div className="flex flex-col gap-10">
       <p className="text-muted-foreground max-w-2xl text-sm">
-        Units: best bets and the spread lock are 1u. Player props and the moneyline dog are 0.5u. Two-leg ATD 0.5u.
-        Three-leg ATD 0.25u. Two-player 2+ TD 0.25u. Lotto 0.1u. Fades are sit-outs, not bets. Fun only.
+        Units scale with edge: props and 2-leg ATD 0.25–0.75u. Totals only go to 1u on a large gap.
+        3-leg ATD / 2+ TD 0.1–0.25u. Lotto 0.1u. Sits are 0u. Fun only.
       </p>
       {desk.remainingOnly ? (
         <p className="text-faint -mt-6 font-mono text-[11px] tracking-wide uppercase">
@@ -92,7 +92,7 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
             <Conf n={desk.spreadLock.confidence} />
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">No spread posted yet.</p>
+          <p className="text-muted-foreground text-sm">No spread with a real edge on remaining games.</p>
         )}
       </section>
 
@@ -171,12 +171,14 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
       <section>
         <h2 className="display text-2xl font-semibold">Two-player anytime TD</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Two legs, two games. 0.5u. Not a same-game parlay.
+          Two legs, two games. {desk.atdParlay?.unit ?? "0.25–0.75u"} by edge. Not a same-game parlay.
         </p>
         {desk.atdParlay ? (
           <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">2-leg ATD · 0.5u</p>
+              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
+                2-leg ATD · {desk.atdParlay.unit ?? "0.5u"}
+              </p>
               <p className="display text-3xl leading-none font-semibold">
                 {formatAmerican(desk.atdParlay.combinedAmerican)}
                 <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
