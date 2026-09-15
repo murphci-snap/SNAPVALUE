@@ -162,6 +162,8 @@ export interface Player {
   showdownRole: ShowdownRole | null;
   ownership: number | null;
   ownershipSource: "model" | "site" | null;
+  /** Base DK pts from this week's box (CPT not yet 1.5×). */
+  actualDk: number | null;
 }
 
 export interface SlateOption {

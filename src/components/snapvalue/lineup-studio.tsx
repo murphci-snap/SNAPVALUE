@@ -2,22 +2,33 @@ import { Copy, Lock, RefreshCw, Sparkles, Unlock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { reviewLineup, slateReviewReady, type CashVerdict } from "@/lib/dfs/cash-review";
 import { CONTEST_META, generateLineups, lineupAsText, type ContestStyle } from "@/lib/dfs/optimizer";
 import { SLOT_LABEL } from "@/lib/dfs/constants";
-import type { Lineup, Player, SlateFormat } from "@/lib/dfs/types";
+import type { Game, Lineup, Player, SlateFormat } from "@/lib/dfs/types";
 import { cn, formatPts, formatUsd } from "@/lib/utils";
 
 const CLASSIC_CONTESTS: ContestStyle[] = ["single", "milly", "small", "doubleup"];
 const SHOWDOWN_CONTESTS: ContestStyle[] = ["doubleup", "milly"];
 
+function VerdictBadge({ verdict }: { verdict: CashVerdict }) {
+  if (verdict === "cash") return <Badge variant="value">Cash</Badge>;
+  if (verdict === "miss") return <Badge variant="warn">Miss</Badge>;
+  if (verdict === "borderline") return <Badge variant="hot">Borderline</Badge>;
+  if (verdict === "live") return <Badge variant="outline">Live</Badge>;
+  return <Badge variant="outline">TBD</Badge>;
+}
+
 export function LineupStudio({
   players,
+  games = [],
   locks,
   excludes,
   onToggleLock,
   format = "classic",
 }: {
   players: Player[];
+  games?: Game[];
   locks: string[];
   excludes: string[];
   onToggleLock: (id: string) => void;
@@ -28,9 +39,12 @@ export function LineupStudio({
   const [contest, setContest] = useState<ContestStyle>("single");
   const [seed, setSeed] = useState(1);
   const [copied, setCopied] = useState<string | null>(null);
+  const reviewDefault = useMemo(() => slateReviewReady(players), [players]);
+  const [reviewOn, setReviewOn] = useState(reviewDefault);
   const showdown = format === "showdown";
   const contests = showdown ? SHOWDOWN_CONTESTS : CLASSIC_CONTESTS;
   const activeContest = showdown && contest !== "doubleup" && contest !== "milly" ? "doubleup" : contest;
+  const gameCount = games.length || new Set(players.map((p) => p.gameName).filter(Boolean)).size || 13;
 
   const lineups = useMemo(
     () =>
@@ -118,6 +132,26 @@ export function LineupStudio({
         </p>
       </div>
 
+      {reviewDefault ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setReviewOn((v) => !v)}
+            className={cn(
+              "h-11 rounded-md px-3 text-sm font-medium shadow-[var(--shadow-border)]",
+              reviewOn ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground",
+            )}
+          >
+            {reviewOn ? "Post-slate review on" : "Would these have cashed?"}
+          </button>
+          {reviewOn ? (
+            <p className="text-muted-foreground max-w-xl text-xs">
+              Actuals from ESPN box scored as DK. Cash line is an estimate, not an official DraftKings payout.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {locks.length > 0 && (
         <p className="text-muted-foreground text-xs">
           {locks.length} locked · optimizer fills around them
@@ -132,7 +166,9 @@ export function LineupStudio({
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {lineups.map((lu, i) => (
+          {lineups.map((lu, i) => {
+            const rev = reviewOn ? reviewLineup(lu, activeContest, format, gameCount) : null;
+            return (
             <article
               key={lu.id}
               className="rounded-xl bg-card p-3 shadow-[var(--shadow-border)]"
@@ -144,6 +180,7 @@ export function LineupStudio({
                   <Badge variant="outline">
                     {showdown ? (activeContest === "milly" ? "GPP CPT" : "Chalk CPT") : CONTEST_META[activeContest].label}
                   </Badge>
+                  {rev ? <VerdictBadge verdict={rev.verdict} /> : null}
                   {lu.stacks.map((s) => (
                     <Badge key={s} variant="hot">
                       {s}
@@ -159,20 +196,50 @@ export function LineupStudio({
                   {copied === lu.id ? "Copied" : "Copy"}
                 </button>
               </div>
-              <div className="mb-2 flex gap-3 font-mono text-xs tabular-nums">
+              <div className="mb-2 flex flex-wrap gap-3 font-mono text-xs tabular-nums">
                 <span>
                   <span className="text-faint">PROJ </span>
                   {formatPts(lu.projection)}
                 </span>
+                {rev?.actual != null ? (
+                  <span>
+                    <span className="text-faint">ACT </span>
+                    <span className={cn(rev.verdict === "cash" && "text-value", rev.verdict === "miss" && "text-warn")}>
+                      {formatPts(rev.actual)}
+                    </span>
+                    {rev.delta != null ? (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        ({rev.delta > 0 ? "+" : ""}
+                        {rev.delta.toFixed(1)})
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
                 <span>
                   <span className="text-faint">SAL </span>
                   {formatUsd(lu.salary)}
                 </span>
                 <span className="text-value">{formatUsd(lu.remaining)} left</span>
               </div>
+              {rev && reviewOn ? (
+                <p className="text-muted-foreground mb-2 text-[11px]">
+                  {rev.scored}/{rev.roster} scored
+                  {rev.live ? ` · ${rev.live} live` : ""}
+                  {rev.pending ? ` · ${rev.pending} still to play` : ""}
+                  {" · "}
+                  {rev.lineLabel} {formatPts(rev.line)}
+                </p>
+              ) : null}
               <ul className="divide-border divide-y">
                 {lu.players.map((lp) => {
                   const locked = locks.includes(lp.player.id);
+                  const act =
+                    lp.player.actualDk == null
+                      ? null
+                      : lp.slot === "CPT"
+                        ? lp.player.actualDk * 1.5
+                        : lp.player.actualDk;
                   return (
                     <li key={lp.slot} className="flex items-center gap-2 py-1.5">
                       <span className="text-faint w-10 shrink-0 font-mono text-[10px] tracking-wide">
@@ -186,6 +253,11 @@ export function LineupStudio({
                       <span className="font-mono text-xs text-muted-foreground tabular-nums">
                         {formatPts(lp.player.projection)}
                       </span>
+                      {reviewOn ? (
+                        <span className="w-10 text-right font-mono text-xs tabular-nums">
+                          {act == null ? "—" : formatPts(act)}
+                        </span>
+                      ) : null}
                       <span className="w-10 text-right font-mono text-xs tabular-nums">
                         {(lp.player.salary / 1000).toFixed(1)}
                       </span>
@@ -202,7 +274,8 @@ export function LineupStudio({
                 })}
               </ul>
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
 

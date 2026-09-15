@@ -23,7 +23,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 25;
+const CACHE_VER = 26;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -289,7 +289,16 @@ function espnStats(player: NonNullable<EspnPlayerRow["player"]>, season: number,
       ? stats.find((s) => s.statSourceId === 0 && s.seasonId === season && s.scoringPeriodId === week - 1)
       : undefined;
   const lastWeekPts = lastWeek?.appliedTotal ?? 0;
-  return { seasonStats, weekProj, lastWeekPts };
+  let weekActual: WeekProjection | null = null;
+  const box = stats.find((s) => s.statSourceId === 0 && s.seasonId === season && s.scoringPeriodId === week);
+  if (box?.stats) {
+    weekActual = weekFromEspn(box.stats);
+    weekActual.espnPpr = box.appliedTotal ?? 0;
+  } else if (box?.appliedTotal != null && box.appliedTotal > 0) {
+    weekActual = emptyWeek();
+    weekActual.espnPpr = box.appliedTotal;
+  }
+  return { seasonStats, weekProj, lastWeekPts, weekActual };
 }
 
 type SlateDataOk = Extract<SlateResponse, { ok: true }>;
@@ -487,7 +496,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         idx.byNameTeam.get(`${n}|${team}|${position}`) ??
         idx.byName.get(n);
 
-      const parsed = ep ? espnStats(ep, season, week) : { seasonStats: null, weekProj: null, lastWeekPts: 0 };
+      const parsed = ep ? espnStats(ep, season, week) : { seasonStats: null, weekProj: null, lastWeekPts: 0, weekActual: null };
       let weekProj = parsed.weekProj;
       if (weekProj) weekProj.dk = dkFromWeek(weekProj, position);
 
@@ -599,6 +608,12 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       };
 
       const value = d.salary > 0 ? projection / (d.salary / 1000) : 0;
+      let actualDk: number | null = null;
+      if (parsed.weekActual) {
+        const box = parsed.weekActual;
+        box.dk = dkFromWeek(box, position);
+        actualDk = round1(box.dk > 0.15 ? box.dk : box.espnPpr > 0 ? box.espnPpr : box.dk);
+      }
 
       players.push({
         id: showdownRole ? `${d.playerId}:${showdownRole}` : String(d.playerId),
@@ -643,6 +658,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         showdownRole,
         ownership: null,
         ownershipSource: null,
+        actualDk,
       });
     }
 

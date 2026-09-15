@@ -46,10 +46,16 @@ export function kickoffMs(iso: string): number {
   return Number.isFinite(t) ? t : 0;
 }
 
+export function gamePhase(startTime: string, now = Date.now()): "pre" | "live" | "final" {
+  const t = kickoffMs(startTime);
+  if (t === 0) return "pre";
+  if (now < t + 8 * 60 * 1000) return "pre";
+  if (now < t + 3.75 * 3600 * 1000) return "live";
+  return "final";
+}
+
 export function isUpcoming(game: Game, now = Date.now()): boolean {
-  const t = kickoffMs(game.startTime);
-  if (t === 0) return true;
-  return t > now - 8 * 60 * 1000;
+  return gamePhase(game.startTime, now) === "pre";
 }
 
 export function otherTeam(game: Game, abbr: string): string {

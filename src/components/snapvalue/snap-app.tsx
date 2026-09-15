@@ -157,6 +157,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
           {tab === "lineups" && (
             <LineupStudio
               players={data.players}
+              games={data.games}
               locks={locks}
               excludes={excludes}
               onToggleLock={toggleLock}
