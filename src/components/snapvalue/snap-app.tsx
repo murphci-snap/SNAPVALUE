@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { BetDesk } from "./bet-desk";
 import { DisclaimerFooter, DisclaimerGate, readDisclaimerAccepted, writeDisclaimerAccepted } from "./disclaimer-gate";
 import { DvpBoard } from "./dvp-board";
-import { LateSwapBoard } from "./late-swap-board";
 import { LineupStudio } from "./lineup-studio";
 import { PlayerBoard } from "./player-board";
 import { PoolStudio } from "./pool-studio";
@@ -145,12 +144,6 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         <div className="mt-5">
           {tab === "board" && (
             <>
-              <LateSwapBoard
-                players={data.players}
-                locks={locks}
-                week={data.week}
-                draftGroupId={data.draftGroupId}
-              />
               <PlayerBoard
                 data={data}
                 locks={locks}
