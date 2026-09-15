@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { normalizeName } from "@/lib/utils";
 import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP, SHOWDOWN_POSITIONS } from "./constants";
 import { getJson, settled } from "./http";
+import { loadDkDraftables, loadDkGroups } from "./dk";
 import { markItFactor } from "./it-factor";
 import { markOwnership } from "./ownership";
 import { markCheapImpact } from "./sleeper";
@@ -23,7 +24,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 27;
+const CACHE_VER = 28;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -384,6 +385,32 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   });
 }
 
+function markStale(value: SlateDataOk): SlateDataOk {
+  return { ...value, stale: true };
+}
+
+async function lastGoodSlate(draftGroupId?: number): Promise<SlateResponse | undefined> {
+  const cache = getCache();
+  const exact = draftGroupId != null ? cache.get(`slate:${CACHE_VER}:${draftGroupId}`) : undefined;
+  if (exact?.value && exact.value.ok) return markStale(exact.value);
+  let best: CacheHit | undefined;
+  for (const hit of cache.values()) {
+    if (hit.value.ok && (!best || hit.at > best.at)) best = hit;
+  }
+  if (best?.value && best.value.ok) return markStale(best.value);
+  try {
+    const { readLastGood } = await import("./slate-cache.server");
+    const disk = readLastGood(draftGroupId);
+    if (disk?.value && disk.value.ok) {
+      cache.set(`slate:${CACHE_VER}:${draftGroupId ?? "auto"}`, disk);
+      return markStale(disk.value);
+    }
+  } catch {
+    /* no fs */
+  }
+  return undefined;
+}
+
 export async function loadSlate(draftGroupId?: number, force?: boolean): Promise<SlateResponse> {
   const cache = getCache();
   const cacheKey = `slate:${CACHE_VER}:${draftGroupId ?? "auto"}`;
@@ -408,17 +435,19 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
   const siteMs = onVercel ? 6500 : 18000;
 
   try {
-    const [state, groupsJson] = await Promise.all([
+    const [state, groups] = await Promise.all([
       getJson<{ week: number; season: string; season_type: string }>("https://api.sleeper.app/v1/state/nfl"),
-      getJson<{ draftGroups: DkGroup[] }>("https://api.draftkings.com/draftgroups/v1/?sport=NFL"),
+      loadDkGroups(),
     ]);
 
     const week = Number(state.week) || 1;
     const season = Number(state.season) || 2026;
-    const classic = pickClassicSlates(groupsJson.draftGroups ?? []);
-    const showdowns = pickShowdownSlates(groupsJson.draftGroups ?? []);
+    const classic = pickClassicSlates(groups);
+    const showdowns = pickShowdownSlates(groups);
     const slates = [...classic, ...showdowns];
     if (!slates.length) {
+      const stale = await lastGoodSlate(draftGroupId);
+      if (stale) return stale;
       const err: SlateResponse = { ok: false, error: "No DraftKings Classic or Showdown slates are posted yet." };
       cache.set(cacheKey, { at: Date.now(), value: err });
       return err;
@@ -449,9 +478,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     });
 
     const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, sleeperIdx, propsBundle, scores] = await Promise.all([
-      getJson<{ draftables: DkDraftable[]; competitions: DkCompetition[] }>(
-        `https://api.draftkings.com/draftgroups/v1/draftgroups/${selected.draftGroupId}/draftables`,
-      ),
+      loadDkDraftables(selected.draftGroupId),
       settled(
         getJson<{ players: EspnPlayerRow[] }>(
           `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leaguedefaults/3?view=kona_player_info&scoringPeriodId=${week}`,
@@ -842,9 +869,13 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     }
     return value;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not load the weekly slate.";
-    const value: SlateResponse = { ok: false, error: message };
-    return value;
+    const stale = await lastGoodSlate(draftGroupId);
+    if (stale) return stale;
+    const raw = err instanceof Error ? err.message : "";
+    const error = /403/.test(raw)
+      ? "DraftKings blocked slate fetch — retry"
+      : raw || "Could not load the weekly slate.";
+    return { ok: false, error };
   }
 }
 

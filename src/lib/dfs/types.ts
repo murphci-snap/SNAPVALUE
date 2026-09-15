@@ -209,6 +209,7 @@ export interface SlateData {
   players: Player[];
   dvp: Record<Position, DefenseProfile[]>;
   sources: DataSourceInfo[];
+  stale?: boolean;
 }
 
 export interface SlateError {

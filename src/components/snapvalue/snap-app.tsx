@@ -96,7 +96,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
       <div className="mx-auto flex min-h-dvh max-w-lg flex-col items-center justify-center gap-3 px-6 text-center">
         <p className="display text-3xl font-semibold">SNAPVALUE</p>
         <p className="text-muted-foreground text-sm">
-          {data && !data.ok ? data.error : "Could not load this week's slate."}
+          {data && !data.ok ? data.error : "DraftKings blocked slate fetch — retry"}
         </p>
         <Button onClick={() => void refresh()}>
           <RefreshCw /> Retry
@@ -116,6 +116,11 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         refreshing={refreshing || query.isFetching}
       />
       <MatchupStrip games={data.games} />
+      {data.stale ? (
+        <p className="bg-warn/15 text-warn mx-auto max-w-[1440px] px-4 py-2 text-center text-sm lg:px-6">
+          DraftKings blocked a live refresh — showing cached slate. Retry in a bit.
+        </p>
+      ) : null}
       <div className="mx-auto max-w-[1440px] px-4 pb-16 lg:px-6">
         <StatsBar data={data} />
         <div className="mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">

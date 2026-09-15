@@ -16,6 +16,21 @@ export function readTmpCache(key: string, ttlMs: number): Hit | null {
   return null;
 }
 
+export function readLastGood(preferredId?: number): Hit | null {
+  try {
+    const store = JSON.parse(readFileSync(PATH, "utf8")) as Record<string, Hit>;
+    let best: Hit | null = null;
+    for (const [key, hit] of Object.entries(store)) {
+      if (!hit?.value || !("ok" in hit.value) || !hit.value.ok) continue;
+      if (preferredId != null && key.endsWith(`:${preferredId}`)) return hit;
+      if (!best || hit.at > best.at) best = hit;
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
 export function writeTmpCache(key: string, value: SlateResponse) {
   try {
     let store: Record<string, Hit> = {};

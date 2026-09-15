@@ -1,14 +1,30 @@
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
+const DK_HEADERS: Record<string, string> = {
+  Accept: "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  Origin: "https://www.draftkings.com",
+  Referer: "https://www.draftkings.com/lobby#/NFL",
+};
+
+function headersFor(url: string, extra?: HeadersInit): Record<string, string> {
+  const base: Record<string, string> = {
+    Accept: "application/json, text/plain, */*",
+    "User-Agent": UA,
+  };
+  if (/draftkings\.com/i.test(url)) Object.assign(base, DK_HEADERS);
+  if (extra) {
+    const h = extra instanceof Headers ? Object.fromEntries(extra.entries()) : Array.isArray(extra) ? Object.fromEntries(extra) : extra;
+    Object.assign(base, h);
+  }
+  return base;
+}
+
 export async function getJson<T>(url: string, init?: RequestInit, timeoutMs = 16000): Promise<T> {
   const res = await fetch(url, {
     ...init,
-    headers: {
-      Accept: "application/json, text/plain, */*",
-      "User-Agent": UA,
-      ...(init?.headers ?? {}),
-    },
+    headers: headersFor(url, init?.headers),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`${res.status} ${url}`);
