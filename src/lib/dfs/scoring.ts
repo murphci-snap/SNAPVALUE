@@ -209,6 +209,71 @@ export function mean(values: number[]): number | null {
   return xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
+export function median(values: number[]): number | null {
+  const xs = values.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+  if (!xs.length) return null;
+  const mid = Math.floor(xs.length / 2);
+  return xs.length % 2 ? xs[mid]! : (xs[mid - 1]! + xs[mid]!) / 2;
+}
+
+/** Drop tails, then average. 2-site boards just average. */
+export function trimmedMean(values: number[]): number | null {
+  const xs = values.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+  if (!xs.length) return null;
+  if (xs.length === 1) return xs[0]!;
+  if (xs.length === 2) return (xs[0]! + xs[1]!) / 2;
+  const med = median(xs);
+  if (med == null) return mean(xs);
+  const tight = xs.filter((n) => Math.abs(n - med) <= Math.max(8, med * 0.4));
+  const use = tight.length >= 2 ? tight : xs.slice(1, xs.length - 1);
+  return use.reduce((a, b) => a + b, 0) / use.length;
+}
+
+export type SiteScore = { id: string; points: number };
+
+/**
+ * Weekly consensus: CBS / FP / RotoWire first. Yahoo DFS fppg is last-resort
+ * and dropped when it disagrees with CBS (or the weekly median) by >8 pts.
+ */
+export function robustSiteConsensus(sites: SiteScore[]): number | null {
+  const clean = sites.filter((s) => Number.isFinite(s.points) && s.points > 0.5 && s.points < 52);
+  if (!clean.length) return null;
+  const yahoo = clean.find((s) => s.id === "yahoo");
+  const cbs = clean.find((s) => s.id === "cbs");
+  const weekly = clean.filter((s) => s.id !== "yahoo");
+  let keep = clean;
+  if (yahoo && cbs && Math.abs(yahoo.points - cbs.points) > 8) keep = weekly;
+  else if (yahoo && weekly.length) {
+    const med = median(weekly.map((s) => s.points));
+    if (med != null && Math.abs(yahoo.points - med) > 8) keep = weekly;
+  }
+  const preferred = keep.filter((s) => s.id !== "yahoo");
+  const use = preferred.length ? preferred : keep;
+  const pts = use.map((s) => s.points);
+  if (pts.length >= 3) return median(pts) ?? trimmedMean(pts);
+  return trimmedMean(pts);
+}
+
+const ESPN_OUT = /\b(out|ir|doubtful|suspended|pup|nfi|injury.?reserve|injured.?reserve)\b/i;
+const DK_OUT = /^(out|o|ir|d|doubtful|suspended|pup|nfi)$/i;
+
+/** ESPN OUT/IR/Doubtful wins even if DK says Q. */
+export function isSidelined(injury?: string | null, status?: string | null): boolean {
+  const inj = (injury ?? "").trim();
+  const st = (status ?? "").trim();
+  if (inj && ESPN_OUT.test(inj)) return true;
+  if (st && (DK_OUT.test(st) || ESPN_OUT.test(st))) return true;
+  return false;
+}
+
+export function isQuestionable(injury?: string | null, status?: string | null): boolean {
+  if (isSidelined(injury, status)) return false;
+  const blob = `${injury ?? ""} ${status ?? ""}`;
+  return /\b(questionable|gtd|game.?time)\b/i.test(blob) || /^(q|gtd)$/i.test((status ?? "").trim());
+}
+
+export const Q_HAIRCUT = 0.88;
+
 export function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }

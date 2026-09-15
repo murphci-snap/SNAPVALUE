@@ -1,6 +1,7 @@
 import { mulberry32 } from "@/lib/utils";
 import { ROSTER, SALARY_CAP, SHOWDOWN_ROSTER, SLOT_LABEL } from "./constants";
 import type { Lineup, Player, Position, RosterSlot, SlateFormat } from "./types";
+import { isSidelined } from "./scoring";
 
 export type ContestStyle = "single" | "milly" | "small" | "doubleup";
 
@@ -107,7 +108,7 @@ export function generateLineups(
   const pool = players.filter((p) => {
     if (exclude.has(p.id)) return false;
     if (p.salary <= 0) return false;
-    if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /^(out|ir|doubtful)/i.test(p.injury ?? "")) {
+    if (isSidelined(p.injury, p.status)) {
       return lockIds.has(p.id);
     }
     const floor = p.position === "DST" ? (contest === "small" ? 5 : 3.5) : p.position === "QB" ? qbFloor : skillFloor;
@@ -296,7 +297,7 @@ export function generateShowdownLineups(
     if (exclude.has(p.id)) return false;
     if (p.salary <= 0) return false;
     if (p.showdownRole === "CPT") return false;
-    if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /^(out|ir|doubtful)/i.test(p.injury ?? "")) {
+    if (isSidelined(p.injury, p.status)) {
       return lockIds.has(p.id);
     }
     return p.projection >= 3 || lockIds.has(p.id);
@@ -305,7 +306,7 @@ export function generateShowdownLineups(
     if (exclude.has(p.id)) return false;
     if (p.showdownRole !== "CPT") return false;
     if (p.salary <= 0) return false;
-    if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /^(out|ir|doubtful)/i.test(p.injury ?? "")) {
+    if (isSidelined(p.injury, p.status)) {
       return lockIds.has(p.id);
     }
     return p.projection >= 5 || lockIds.has(p.id);

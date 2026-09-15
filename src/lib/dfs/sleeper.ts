@@ -1,4 +1,5 @@
 import type { Player, Position } from "./types";
+import { isSidelined } from "./scoring";
 
 const CHEAP: Position[] = ["QB", "RB", "WR", "TE"];
 const SOFT: Record<Position, number> = { QB: 5500, RB: 5000, WR: 5000, TE: 5000, DST: 3000, K: 4500 };
@@ -8,8 +9,7 @@ const TAKE = 1;
 function available(p: Player): boolean {
   if (p.showdownRole === "CPT") return false;
   if (p.salary <= 0) return false;
-  if (p.injury && /out|ir|doubtful|suspended/i.test(p.injury)) return false;
-  if (/^(out|ir|doubtful|suspended)/i.test(p.status)) return false;
+  if (isSidelined(p.injury, p.status)) return false;
   return true;
 }
 

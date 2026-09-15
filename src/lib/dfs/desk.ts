@@ -7,7 +7,7 @@ import {
   probToAmerican,
   teamWinProb,
 } from "./markets";
-import { americanToProb, expectedTdsFromAnytime } from "./scoring";
+import { americanToProb, expectedTdsFromAnytime, isSidelined } from "./scoring";
 import type { Game, Player } from "./types";
 
 export type BetMarket = "spread" | "total" | "moneyline" | "prop";
@@ -250,7 +250,7 @@ function bestProp(
   for (const p of players) {
     if (p.position !== pos) continue;
     if (p.isStarter === false) continue;
-    if (/out|ir|doubtful|suspended/i.test(p.injury ?? "") || /^(out|ir|doubtful)/i.test(p.status)) continue;
+    if (isSidelined(p.injury, p.status)) continue;
     const line = getter(p);
     if (line == null || line <= 0) continue;
     const card = propCard(p, line, kind, games);

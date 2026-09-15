@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { POSITIONS } from "@/lib/dfs/constants";
 import { kickoffLabel, matchupLabel, matchupTone, propLineItems, rankingLabel, seasonLine, weekLine } from "@/lib/dfs/format-ui";
+import { isSidelined } from "@/lib/dfs/scoring";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary } from "@/lib/utils";
 import { CheapImpactRack } from "./cheap-impact-rack";
@@ -77,7 +78,7 @@ export function PlayerBoard({
       valueRackPos.map((p) => ({
         pos: p,
         players: [...boardPlayers]
-          .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false)
+          .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false && !isSidelined(x.injury, x.status))
           .sort((a, b) => b.value - a.value || a.valueRank - b.valueRank)
           .slice(0, 4),
       })),

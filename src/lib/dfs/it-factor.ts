@@ -1,6 +1,7 @@
 import { POSITIONS } from "./constants";
 import type { Game, Player } from "./types";
 import { ordinal } from "@/lib/utils";
+import { isSidelined } from "./scoring";
 
 function implied(player: Player, games: Game[]): number | null {
   const g = games.find((x) => x.homeAbbr === player.team || x.awayAbbr === player.team);
@@ -54,7 +55,7 @@ export function itScore(p: Player, games: Game[]): number {
   if (p.projection > p.fppg + 5 && p.fppg >= 6) s += 1.8;
   if (p.value >= 2.6 && p.projection >= 12) s += 1.6;
   if (p.rankingMethod === "props") s += 0.8;
-  if (p.injury && /out|ir|doubtful|suspended/i.test(p.injury)) s -= 20;
+  if (isSidelined(p.injury, p.status)) s -= 40;
   return s;
 }
 
@@ -68,8 +69,7 @@ export function markItFactor(players: Player[], games: Game[]) {
     const pool = players.filter((p) => {
       if (p.position !== pos) return false;
       if (p.isStarter === false) return false;
-      if (p.injury && /out|ir|doubtful|suspended/i.test(p.injury)) return false;
-      if (/^(out|ir|doubtful|suspended)/i.test(p.status)) return false;
+      if (isSidelined(p.injury, p.status)) return false;
       const floor = pos === "DST" ? 4 : pos === "QB" ? 14 : 8;
       return p.projection >= floor;
     });

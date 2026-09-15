@@ -1,4 +1,5 @@
 import type { Player } from "./types";
+import { isQuestionable, isSidelined, Q_HAIRCUT, robustSiteConsensus } from "./scoring";
 
 export type PprGroup = "QB" | "RB" | "WR" | "TE" | "FLEX" | "DST";
 
@@ -71,11 +72,20 @@ function dstPpr(p: Player): number {
 
 /** This week's full-PPR only. Never Classic DK `projection`. */
 export function pprPoints(p: Player): number {
+  if (isSidelined(p.injury, p.status)) return 0;
   if (p.position === "DST") return dstPpr(p);
   const built = skillPpr(p);
-  if (built >= 2) return built;
-  const weekly = p.week?.espnPpr ?? 0;
-  return weekly > 1 ? weekly : 0;
+  const site = robustSiteConsensus(
+    (p.sources ?? [])
+      .filter((s) => s.kind === "site")
+      .map((s) => ({ id: s.id, points: s.points })),
+  );
+  let pts = 0;
+  if (built >= 4) pts = built;
+  else if (site != null && site >= 2) pts = site;
+  else if (built >= 2) pts = built;
+  if (pts > 0 && isQuestionable(p.injury, p.status)) pts *= Q_HAIRCUT;
+  return pts;
 }
 
 function tapeFor(p: Player): string {
@@ -88,9 +98,7 @@ function tapeFor(p: Player): string {
 export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
   const pool = players.filter((p) => {
     if (p.showdownRole === "CPT") return false;
-    if (/^(out|ir|doubtful|suspended)/i.test(p.status) || /out|ir|doubtful|suspended/i.test(p.injury ?? "")) {
-      return false;
-    }
+    if (isSidelined(p.injury, p.status)) return false;
     if (group === "FLEX") return p.position === "RB" || p.position === "WR" || p.position === "TE";
     return p.position === group;
   });

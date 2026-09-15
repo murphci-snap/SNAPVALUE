@@ -5,8 +5,8 @@ import { getJson, settled } from "./http";
 import { markItFactor } from "./it-factor";
 import { markCheapImpact } from "./sleeper";
 import { applyGameLines, loadProps, lookupProps } from "./props";
-import { loadCbs, loadFantasyProsEcr, loadYahoo, lookupSite } from "./projections";
-import { dkFromProps, dkFromWeek, emptyWeek, fillWeek, matchupMultiplier, mean, round1, round2, seasonFromEspn, weekFromEspn } from "./scoring";
+import { loadCbs, loadFantasyProsEcr, loadSleeper, loadYahoo, lookupSite } from "./projections";
+import { dkFromProps, dkFromWeek, emptyWeek, fillWeek, isQuestionable, isSidelined, matchupMultiplier, Q_HAIRCUT, robustSiteConsensus, round1, round2, seasonFromEspn, weekFromEspn } from "./scoring";
 import type {
   DataSourceInfo,
   DefenseProfile,
@@ -22,7 +22,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 20;
+const CACHE_VER = 21;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -384,6 +384,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     const yahooP = withTimeout(loadYahoo(), siteMs, EMPTY_SITE);
     const cbsP = withTimeout(loadCbs(season, week), siteMs, EMPTY_SITE);
     const fpP = withTimeout(loadFantasyProsEcr(week), siteMs, EMPTY_SITE);
+    const sleeperP = withTimeout(loadSleeper(season, week), siteMs, EMPTY_SITE);
     const propsP = withTimeout(loadProps(), extrasMs, EMPTY_PROPS);
 
     const espnFilter = JSON.stringify({
@@ -397,7 +398,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       },
     });
 
-    const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, propsBundle] = await Promise.all([
+    const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, sleeperIdx, propsBundle] = await Promise.all([
       getJson<{ draftables: DkDraftable[]; competitions: DkCompetition[] }>(
         `https://api.draftkings.com/draftgroups/v1/draftgroups/${selected.draftGroupId}/draftables`,
       ),
@@ -411,6 +412,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       yahooP,
       cbsP,
       fpP,
+      sleeperP,
       propsP,
     ]);
 
@@ -486,16 +488,21 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       const yahoo = lookupSite(yahooIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(yahooIdx, `${team} DST`, team) : undefined);
       const cbs = lookupSite(cbsIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(cbsIdx, `${team} DST`, team) : undefined);
       const fp = lookupSite(fpIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(fpIdx, `${team} DST`, team) : undefined);
+      const sleeper = lookupSite(sleeperIdx, d.displayName, team) ?? (position === "DST" ? lookupSite(sleeperIdx, `${team} DST`, team) : undefined);
       const props = lookupProps(propsBundle, d.displayName, team, ep?.id);
 
       const sources: SourceProjection[] = [];
-      if (yahoo) sources.push({ id: yahoo.id, label: yahoo.label, points: yahoo.points, kind: "site" });
       if (cbs) sources.push({ id: cbs.id, label: cbs.label, points: cbs.points, kind: "site" });
       if (fp) sources.push({ id: fp.id, label: fp.label, points: fp.points, kind: "site" });
+      if (sleeper) sources.push({ id: sleeper.id, label: sleeper.label, points: sleeper.points, kind: "site" });
+      if (yahoo) sources.push({ id: yahoo.id, label: yahoo.label, points: yahoo.points, kind: "site" });
 
       if (cbs?.week) {
         weekProj = fillWeek(weekProj ?? emptyWeek(), cbs.week);
         if (!weekProj.dk) weekProj.dk = cbs.points;
+      } else if (sleeper?.week) {
+        weekProj = fillWeek(weekProj ?? emptyWeek(), sleeper.week);
+        if (!weekProj.dk) weekProj.dk = sleeper.points;
       }
       if (props?.line && position !== "DST") {
         weekProj = fillWeek(weekProj ?? emptyWeek(), {
@@ -527,13 +534,21 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         }
       }
 
-      const sitePts = sources.filter((s) => s.kind === "site").map((s) => s.points);
-      const consensusProjection = mean(sitePts);
+      const siteRows = sources.filter((s) => s.kind === "site");
+      const consensusProjection = robustSiteConsensus(siteRows);
+
+      const injury = ep?.injuryStatus && ep.injuryStatus !== "ACTIVE" ? ep.injuryStatus : null;
+      const dkStatus = d.status && d.status !== "None" ? d.status : "Active";
+      const sidelined = isSidelined(injury, dkStatus);
+      const questionable = isQuestionable(injury, dkStatus);
 
       const mult = matchupMultiplier(oppRank, oppQuality);
       let projection = 0;
       let rankingMethod: RankingMethod = "fppg";
-      if (propProjection != null) {
+      if (sidelined) {
+        rankingMethod = "fppg";
+        projection = 0;
+      } else if (propProjection != null) {
         rankingMethod = "props";
         if (consensusProjection != null) {
           const w = propComplete ? 0.95 : 0.4;
@@ -543,11 +558,12 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
           projection = propProjection;
         }
       } else if (consensusProjection != null) {
-        rankingMethod = sitePts.length >= 2 ? "consensus" : "consensus";
+        rankingMethod = siteRows.length >= 2 ? "consensus" : "consensus";
         projection = consensusProjection;
       } else {
         projection = fppg * mult * (home ? 1.02 : 1);
       }
+      if (!sidelined && questionable) projection *= Q_HAIRCUT;
       projection = Math.max(0, projection);
       if (showdownRole === "CPT") projection *= 1.5;
 
@@ -567,7 +583,6 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       };
 
       const value = d.salary > 0 ? projection / (d.salary / 1000) : 0;
-      const injury = ep?.injuryStatus && ep.injuryStatus !== "ACTIVE" ? ep.injuryStatus : null;
 
       players.push({
         id: showdownRole ? `${d.playerId}:${showdownRole}` : String(d.playerId),
@@ -589,7 +604,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         projection: round1(projection),
         value: round2(value),
         image: d.playerImage160 || null,
-        status: d.status && d.status !== "None" ? d.status : "Active",
+        status: dkStatus,
         injury,
         byeWeek: bye ? Number(bye.value) : null,
         stats: parsed.seasonStats,
@@ -597,7 +612,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
         defense,
         valueRank: 0,
         isValuePlay: false,
-        isStarter: true,
+        isStarter: !sidelined,
         sources,
         rankingMethod,
         propProjection,
@@ -661,6 +676,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
           p.position === pos &&
           p.isStarter &&
           p.showdownRole !== "CPT" &&
+          !isSidelined(p.injury, p.status) &&
           (pos === "DST" || p.salary >= 3000) &&
           p.projection >= floor,
       );
@@ -699,6 +715,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       { id: "yahoo", label: "Yahoo", ok: yahooIdx.ok, players: yahooIdx.players },
       { id: "cbs", label: "CBS Sports", ok: cbsIdx.ok, players: cbsIdx.players },
       { id: "fantasypros", label: "FantasyPros + X", ok: fpIdx.ok, players: fpIdx.players },
+      { id: "rotowire", label: "RotoWire", ok: sleeperIdx.ok, players: sleeperIdx.players },
     ];
 
     const value = compactSlate({
