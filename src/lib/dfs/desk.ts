@@ -94,18 +94,35 @@ function impliedTdShare(players: Player[], team: string): number {
   return teamTdExpect(players, team);
 }
 
-function expectedTotal(game: Game, players: Player[]): number {
+function expectedTotal(game: Game, players: Player[]): { expected: number; market: number | null; tdNote: string } {
   const posted = game.total;
   const market =
     game.homeImplied != null && game.awayImplied != null ? game.homeImplied + game.awayImplied : null;
   const tds = teamTdExpect(players, game.homeAbbr) + teamTdExpect(players, game.awayAbbr);
   const fromTd = tds * 6.8 + 9.2 + (game.isDome ? 0.7 : 0);
-  let expected = market != null && market >= 30 && market <= 62 ? market * 0.78 + fromTd * 0.22 : fromTd;
-  if (posted != null) {
-    expected = posted * 0.5 + expected * 0.5;
-    expected = clamp(expected, posted - 7, posted + 7);
-  }
-  return round1(clamp(expected, 33, 58));
+  let expected = market != null && market >= 30 && market <= 62 ? market : (posted ?? fromTd);
+  const weather = weatherUnderBias(game);
+  expected -= weather;
+  const tdGap = clamp(fromTd - expected, -2.4, 2.4) * 0.1;
+  expected += tdGap;
+  const tdNote =
+    Math.abs(fromTd - (market ?? posted ?? 44)) >= 3
+      ? `TD board leans ${fromTd > (market ?? posted ?? 44) ? "higher" : "lower"} — advisory only.`
+      : "";
+  return { expected: round1(clamp(expected, 33, 58)), market, tdNote };
+}
+
+function weatherUnderBias(game: Game): number {
+  if (game.isDome) return 0;
+  const w = (game.weather ?? "").toLowerCase();
+  if (/rain|storm|shower|snow/.test(w)) return 1.8;
+  if (/wind/.test(w)) return 1.2;
+  return 0;
+}
+
+function weatherHarsh(game: Game | undefined): boolean {
+  if (!game || game.isDome) return false;
+  return /rain|storm|shower|snow|wind/.test((game.weather ?? "").toLowerCase());
 }
 
 function round1(n: number): number {
@@ -171,41 +188,58 @@ function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge:
 function scoreTotal(game: Game, players: Player[]): { pick: "over" | "under"; edge: number; why: string; expected: number } | null {
   if (game.total == null) return null;
   const posted = game.total;
-  const expected = expectedTotal(game, players);
+  const { expected, market, tdNote } = expectedTotal(game, players);
   const gap = expected - posted;
-  if (Math.abs(gap) < (gap < 0 ? 0.6 : 1.0)) return null;
-  const pick = gap > 0 ? "over" : "under";
-  if (pick === "under" && expected >= posted) return null;
-  if (pick === "over" && expected <= posted) return null;
-  const why =
-    pick === "over"
-      ? `Books sit at ${posted}. Model total ${expected.toFixed(1)} after implied points and a dampened TD lean${game.isDome ? " (dome)" : ""}.`
-      : `Posted ${posted} is high versus a model total of ${expected.toFixed(1)} (implied points + TD prices, capped near the number).`;
-  return { pick, edge: Math.min(0.12, Math.abs(gap) / 18), why, expected };
+  const overGate = 2.0;
+  const underGate = 1.5;
+  if (gap >= overGate) {
+    const edge = Math.min(0.12, gap / 16);
+    if (edge < 0.07) return null;
+    const why = `Implied total ${market?.toFixed(1) ?? "n/a"} vs posted ${posted}. Model ${expected.toFixed(1)}.${game.isDome ? " Dome." : ""}${tdNote ? ` ${tdNote}` : ""}`;
+    return { pick: "over", edge, why, expected };
+  }
+  if (gap <= -underGate) {
+    const edge = Math.min(0.12, Math.abs(gap) / 16);
+    if (edge < 0.07) return null;
+    const wx = weatherUnderBias(game);
+    const why = `Posted ${posted} sits above implied ${market?.toFixed(1) ?? expected.toFixed(1)}. Model ${expected.toFixed(1)}${wx ? " after outdoor weather" : ""}.${tdNote ? ` ${tdNote}` : ""}`;
+    return { pick: "under", edge, why, expected };
+  }
+  return null;
 }
 
 function gameOf(p: Player, games: Game[]): Game | undefined {
   return games.find((g) => g.homeAbbr === p.team || g.awayAbbr === p.team);
 }
 
-function yardModel(p: Player, line: number, kind: "pass" | "rush" | "rec", games: Game[]): number {
-  const w = p.week;
-  let model =
-    kind === "pass" ? (w?.passYds ?? 0) : kind === "rush" ? (w?.rushYds ?? 0) : (w?.recYds ?? 0);
-  if (model < 8) model = line;
-  if (p.oppRank >= 24) model *= 1.07;
-  else if (p.oppRank >= 20) model *= 1.03;
-  else if (p.oppRank <= 8) model *= 0.93;
+function independentYards(p: Player, kind: "pass" | "rush" | "rec", games: Game[]): number | null {
+  const st = p.stats;
+  const gp = st && st.games >= 3 ? st.games : 0;
+  let pace = 0;
+  if (gp) {
+    pace = kind === "pass" ? st!.passYds / gp : kind === "rush" ? st!.rushYds / gp : st!.recYds / gp;
+  }
+  if (pace < 8) {
+    const cons = p.consensusProjection ?? (p.fppg > 1 ? p.fppg : 0);
+    if (cons < 4) return null;
+    if (kind === "pass") pace = cons * 13.2;
+    else if (kind === "rush") pace = p.position === "RB" ? cons * 5.6 : cons * 2.1;
+    else pace = p.position === "TE" ? cons * 4.3 : cons * 5.1;
+  }
+  if (pace < 8) return null;
+  if (p.oppRank >= 24) pace *= 1.06;
+  else if (p.oppRank >= 20) pace *= 1.03;
+  else if (p.oppRank <= 8) pace *= 0.94;
   const g = gameOf(p, games);
   if (g?.total != null) {
-    if (g.total >= 49) model *= 1.04;
-    else if (g.total <= 41) model *= 0.95;
+    if (g.total >= 49) pace *= 1.03;
+    else if (g.total <= 41) pace *= 0.96;
   }
   const imp = g ? (p.home ? g.homeImplied : g.awayImplied) : null;
-  if (imp != null && imp >= 27 && kind !== "rush") model *= 1.03;
-  if (imp != null && imp <= 17) model *= 0.95;
-  if (p.itFactor && kind !== "rush") model *= 1.02;
-  return model;
+  if (imp != null && imp >= 27 && kind !== "rush") pace *= 1.03;
+  if (imp != null && imp <= 17) pace *= 0.95;
+  if (weatherHarsh(g) && kind === "pass") pace *= 0.94;
+  return pace;
 }
 
 function propCard(
@@ -215,28 +249,39 @@ function propCard(
   games: Game[],
 ): DeskBet | null {
   if (line < 12) return null;
-  const model = yardModel(p, line, kind, games);
+  const model = independentYards(p, kind, games);
+  if (model == null) return null;
   const gap = model - line;
-  if (Math.abs(gap) < line * 0.025 && Math.abs(gap) < 6) return null;
   const over = gap > 0;
+  const rel = Math.abs(gap) / line;
+  if (over && (rel < 0.05 || Math.abs(gap) < 8)) return null;
+  if (!over && (rel < 0.045 || Math.abs(gap) < 6)) return null;
+  const edge = Math.min(0.16, Math.abs(gap) / Math.max(40, line));
+  if (over && edge < 0.09) return null;
+  if (!over && edge < 0.07) return null;
   const label = kind === "pass" ? "pass yds" : kind === "rush" ? "rush yds" : "rec yds";
   const g = gameOf(p, games);
-  const books = p.props?.books?.length ? p.props.books.join(" · ") : "Vegas / DK";
+  const bookList = p.props?.books?.length ? p.props.books : [];
+  const books = bookList.join(" · ") || "Vegas";
   return {
     id: `prop-${kind}-${p.id}`,
     title: `${over ? "Over" : "Under"} ${line.toFixed(1)}`,
     market: "prop",
     pick: `${p.name} ${over ? "o" : "u"}${line.toFixed(1)} ${label}`,
     line: `${p.position} · ${p.team} ${p.home ? "vs" : "@"} ${p.opponent}${g?.total != null ? ` · O/U ${g.total}` : ""}`,
-    edge: Math.min(0.14, Math.abs(gap) / Math.max(40, line)),
-    confidence: Math.round(54 + Math.min(14, Math.abs(gap) / 3)),
-    why: `Posted ${line.toFixed(1)} ${label}. Model sits near ${model.toFixed(0)} after matchup and total. ${over ? "Need volume in a viable script." : "Script + defense cap the number."}`,
+    edge,
+    confidence: Math.round(54 + Math.min(12, Math.abs(gap) / 3)),
+    why: `Posted ${line.toFixed(1)} ${label} (${books}). Independent pace ${model.toFixed(0)} from season / site consensus — not the same prop. Gap ${gap > 0 ? "+" : ""}${gap.toFixed(0)}.`,
     books,
     tape: over
-      ? "Public leans overs on star skill. Only take it with a real number gap."
-      : "Unders on player yards are quieter. Most casual money still hammers the over.",
+      ? "Public leans overs on star skill. Need a real gap vs an independent number."
+      : "Under only with a real gap. Casual money still hammers the over.",
     unit: "0.5u",
   };
+}
+
+function bookCount(p: Player): number {
+  return p.props?.books?.length ?? 0;
 }
 
 function bestProp(
@@ -246,57 +291,76 @@ function bestProp(
   kind: "pass" | "rush" | "rec",
   getter: (p: Player) => number | undefined,
 ): DeskBet | null {
-  const rows: DeskBet[] = [];
-  for (const p of players) {
-    if (p.position !== pos) continue;
-    if (p.isStarter === false) continue;
-    if (isSidelined(p.injury, p.status)) continue;
+  const eligible = players.filter((p) => {
+    if (p.position !== pos) return false;
+    if (p.isStarter === false) return false;
+    if (isSidelined(p.injury, p.status)) return false;
     const line = getter(p);
-    if (line == null || line <= 0) continue;
+    return line != null && line > 0;
+  });
+  const multi = eligible.filter((p) => bookCount(p) >= 2);
+  const pool = multi.length ? multi : eligible.filter((p) => bookCount(p) >= 1);
+  const rows: DeskBet[] = [];
+  for (const p of pool) {
+    const line = getter(p);
+    if (line == null) continue;
     const card = propCard(p, line, kind, games);
     if (card) rows.push(card);
   }
   rows.sort((a, b) => b.edge - a.edge);
-  if (rows[0]) return rows[0];
-  const fallback = players
-    .filter((p) => p.position === pos && p.isStarter !== false)
-    .map((p) => ({ p, line: getter(p) ?? 0 }))
-    .filter((x) => x.line >= 12)
-    .sort((a, b) => b.line - a.line)[0];
-  if (!fallback) return null;
-  const over = fallback.p.oppRank >= 20;
-  return propCard(fallback.p, fallback.line * (over ? 0.97 : 1.03), kind, games) ?? {
-    id: `prop-${kind}-${fallback.p.id}`,
-    title: `${over ? "Over" : "Under"} ${fallback.line.toFixed(1)}`,
-    market: "prop",
-    pick: `${fallback.p.name} ${over ? "o" : "u"}${fallback.line.toFixed(1)} ${kind === "pass" ? "pass yds" : kind === "rush" ? "rush yds" : "rec yds"}`,
-    line: `${fallback.p.position} · ${fallback.p.team} ${fallback.p.home ? "vs" : "@"} ${fallback.p.opponent}`,
-    edge: 0.04,
-    confidence: 55,
-    why: `Matchup lean on the posted ${fallback.line.toFixed(1)} yard number.`,
-    books: fallback.p.props?.books?.join(" · ") || "Vegas / DK",
-    tape: over ? "Smash spot vs a soft yardage D." : "Tough D / low script — take the under.",
-    unit: "0.5u",
-  };
+  return rows[0] ?? null;
 }
 
-function atdProb(p: Player): number {
+function postedAtd(p: Player): number {
   const raw = p.anytimeTd;
   if (raw != null && raw > 0 && raw < 1) return raw;
   if (raw != null && Math.abs(raw) >= 100) return americanToProb(raw);
-  if (!p.week) return 0;
-  const exp = p.week.rushTd + p.week.recTd + (p.position === "QB" ? p.week.passTd * 0.12 : 0);
-  return Math.max(0, 1 - Math.exp(-Math.max(0.05, exp)));
+  if (p.props?.anytimeTd != null && p.props.anytimeTd > 0 && p.props.anytimeTd < 1) return p.props.anytimeTd;
+  return 0;
+}
+
+function fairAtd(p: Player, games: Game[]): number {
+  const st = p.stats;
+  const gp = st && st.games >= 3 ? st.games : 0;
+  let lambda = 0;
+  if (gp) {
+    lambda = (st!.rushTd + st!.recTd) / gp;
+    if (p.position === "QB") lambda += (st!.passTd / gp) * 0.12;
+  }
+  if (lambda < 0.12) {
+    const cons = p.consensusProjection ?? p.fppg;
+    lambda = p.position === "RB" ? cons / 22 : p.position === "QB" ? cons / 28 : cons / 24;
+  }
+  if (p.oppRank >= 24) lambda *= 1.12;
+  else if (p.oppRank <= 8) lambda *= 0.9;
+  const g = gameOf(p, games);
+  const imp = g ? (p.home ? g.homeImplied : g.awayImplied) : null;
+  if (imp != null && imp >= 26) lambda *= 1.08;
+  if (imp != null && imp <= 17) lambda *= 0.9;
+  if (g?.total != null && g.total >= 49) lambda *= 1.05;
+  return clamp(1 - Math.exp(-Math.max(0.05, lambda)), 0.1, 0.52);
+}
+
+function atdEdgeScore(posted: number, fair: number): number {
+  const edge = fair - posted;
+  let s = edge;
+  if (posted >= 0.28 && posted <= 0.42) s += 0.04;
+  if (posted >= 0.55 && edge < 0.06) s -= 0.2;
+  if (posted > 0.5) s -= 0.03;
+  return s;
 }
 
 /** P(2+ TDs). Posted 2+ market when present; else Poisson from ATD / week TDs. */
 function twoPlusProb(p: Player): { prob: number; priced: boolean } {
   const posted = p.props?.twoPlusTd;
   if (posted != null && posted > 0.02 && posted < 0.7) return { prob: clamp(posted, 0.02, 0.55), priced: true };
-  const atd = atdProb(p);
-  const weekLam =
-    (p.week?.rushTd ?? 0) + (p.week?.recTd ?? 0) + (p.position === "QB" ? (p.week?.passTd ?? 0) * 0.15 : 0);
-  const lambda = Math.max(expectedTdsFromAnytime(atd), weekLam);
+  const atd = postedAtd(p);
+  const st = p.stats;
+  const gp = st && st.games >= 3 ? st.games : 0;
+  const seasonLam = gp
+    ? (st!.rushTd + st!.recTd) / gp + (p.position === "QB" ? (st!.passTd / gp) * 0.15 : 0)
+    : 0;
+  const lambda = Math.max(expectedTdsFromAnytime(atd), seasonLam);
   const multiTdProb = clamp(1 - Math.exp(-lambda) * (1 + lambda), 0.02, 0.55);
   return { prob: multiTdProb, priced: false };
 }
@@ -358,7 +422,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         confidence: Math.round(51 + t.edge * 160),
         why: t.why,
         books: booksFor(g),
-        tape: t.pick === "over" ? "Overs are the public side. Need a real TD-market edge." : "Unders are the quieter side most weeks. Most casual money still lives on the over.",
+        tape: t.pick === "over"
+          ? "Overs are the public side. Need implied points (not just ATD juice) to clear a 2-point gap."
+          : "Unders need a real gap vs implied, or outdoor weather. No forced 1u under.",
         unit: "1u",
       });
     }
@@ -367,35 +433,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   ats.sort((a, b) => b.edge - a.edge);
   totals.sort((a, b) => b.edge - a.edge);
 
-  let unders = totals.filter((t) => /^under/i.test(t.pick));
+  const unders = totals.filter((t) => /^under/i.test(t.pick));
   const overs = totals.filter((t) => /^over/i.test(t.pick));
-  if (!unders.length) {
-    let best: DeskBet | null = null;
-    let bestGap = Number.POSITIVE_INFINITY;
-    for (const g of live) {
-      if (g.total == null) continue;
-      const raw = expectedTotal(g, players);
-      const expected = Math.min(raw, g.total - 0.8);
-      const gap = expected - g.total;
-      if (gap < bestGap) {
-        bestGap = gap;
-        best = {
-          id: `ou-under-${g.id}`,
-          title: `Under ${g.total}`,
-          market: "total",
-          pick: `under ${g.total}`,
-          line: `${g.awayAbbr} @ ${g.homeAbbr}`,
-          edge: Math.min(0.1, Math.abs(gap) / 18 + 0.03),
-          confidence: 56,
-          why: `Quietest total on the board. Model ${expected.toFixed(1)} vs posted ${g.total}.`,
-          books: booksFor(g),
-          tape: "Unders are the quieter side most weeks. Most casual money still lives on the over.",
-          unit: "1u",
-        };
-      }
-    }
-    if (best) unders = [best];
-  }
   const spreadLock = ats[0] ?? null;
   const bestBets: DeskBet[] = [];
   if (spreadLock) bestBets.push(spreadLock);
@@ -419,56 +458,96 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   };
 
   const scored = board
-    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
+    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime) && !isSidelined(p.injury, p.status))
     .map((p) => {
-      const prob = atdProb(p);
-      const match = p.oppQuality === "High" ? 1.12 : p.oppQuality === "Low" ? 0.88 : 1;
-      const american = probToAmerican(prob);
-      return { p, prob: prob * match, american };
-    })
-    .filter((x) => x.prob >= 0.22 && x.prob <= 0.72)
-    .sort((a, b) => b.prob - a.prob);
-
-  let atdParlay: TdParlay | null = null;
-  outer: for (let i = 0; i < scored.length; i++) {
-    for (let j = i + 1; j < scored.length; j++) {
-      const a = scored[i]!;
-      const b = scored[j]!;
-      if (a.p.team === b.p.team) continue;
-      if (a.p.gameName === b.p.gameName) continue;
-      const combined = parlayProb([a.prob, b.prob]);
-      atdParlay = {
-        legs: [
-          {
-            name: a.p.name,
-            team: a.p.team,
-            opponent: a.p.opponent,
-            american: a.american,
-            prob: a.prob,
-            why: `${a.p.team} ${a.p.home ? "vs" : "@"} ${a.p.opponent} · ${a.p.oppQuality === "High" ? "smash matchup" : "viable TD role"}`,
-          },
-          {
-            name: b.p.name,
-            team: b.p.team,
-            opponent: b.p.opponent,
-            american: b.american,
-            prob: b.prob,
-            why: `${b.p.team} ${b.p.home ? "vs" : "@"} ${b.p.opponent} · independent game from ${a.p.team}`,
-          },
-        ],
-        combinedAmerican: probToAmerican(combined),
-        combinedProb: combined,
-        why: `Two independent games, both with real TD equity. Avoid same-backfield cannibalization. Books: ${a.p.props?.books.join("/") || "Vegas"} · ${b.p.props?.books.join("/") || "Vegas"}.`,
-        tape: "X ATD chatter this week leaned skill-position names in high totals (Action Network on Deebo in the London/Australia window; JSN already cashed Wednesday). We want two uncorrelated legs, not a same-game lottery ticket.",
+      const posted = postedAtd(p);
+      const fair = fairAtd(p, live);
+      const edge = fair - posted;
+      const s = atdEdgeScore(posted, fair);
+      return {
+        p,
+        prob: posted,
+        fair,
+        edge,
+        s,
+        american: posted > 0 ? probToAmerican(posted) : probToAmerican(fair),
       };
-      break outer;
+    })
+    .filter((x) => {
+      if (x.prob < 0.18 || x.prob > 0.72) return false;
+      if (x.prob >= 0.55 && x.edge < 0.06) return false;
+      return x.s > -0.04;
+    })
+    .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
+
+  function pairHaircut(a: Player, b: Player): number {
+    const ga = gameOf(a, live);
+    const gb = gameOf(b, live);
+    if (!ga || !gb) return 1;
+    const bothHigh = (ga.total ?? 0) >= 49 && (gb.total ?? 0) >= 49;
+    const bothWx = weatherHarsh(ga) && weatherHarsh(gb);
+    return bothHigh || bothWx ? 0.92 : 1;
+  }
+
+  function pickAtdPair(): [typeof scored[number], typeof scored[number]] | null {
+    let best: [typeof scored[number], typeof scored[number]] | null = null;
+    let bestS = -Infinity;
+    for (let i = 0; i < scored.length; i++) {
+      for (let j = i + 1; j < scored.length; j++) {
+        const a = scored[i]!;
+        const b = scored[j]!;
+        if (a.p.team === b.p.team || a.p.gameName === b.p.gameName) continue;
+        const h = pairHaircut(a.p, b.p);
+        const s = (a.s + b.s) * h;
+        if (s > bestS) {
+          bestS = s;
+          best = [a, b];
+        }
+      }
     }
+    return best;
+  }
+
+  const pair = pickAtdPair();
+  let atdParlay: TdParlay | null = null;
+  if (pair) {
+    const [a, b] = pair;
+    const h = pairHaircut(a.p, b.p);
+    const combined = parlayProb([a.prob, b.prob]) * h;
+    const booksA = a.p.props?.books?.join("/") || "Vegas";
+    const booksB = b.p.props?.books?.join("/") || "Vegas";
+    atdParlay = {
+      legs: [
+        {
+          name: a.p.name,
+          team: a.p.team,
+          opponent: a.p.opponent,
+          american: a.american,
+          prob: a.prob,
+          why: `${a.p.team} ${a.p.home ? "vs" : "@"} ${a.p.opponent} · posted ${formatPct(a.prob)} vs fair ${formatPct(a.fair)} (${booksA})`,
+        },
+        {
+          name: b.p.name,
+          team: b.p.team,
+          opponent: b.p.opponent,
+          american: b.american,
+          prob: b.prob,
+          why: `${b.p.team} ${b.p.home ? "vs" : "@"} ${b.p.opponent} · posted ${formatPct(b.prob)} vs fair ${formatPct(b.fair)} (${booksB})`,
+        },
+      ],
+      combinedAmerican: probToAmerican(combined),
+      combinedProb: combined,
+      why: `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
+      tape: "Mid-board ATD (roughly 28–42%) with a real edge beats a −150 chalk name. Cross-game only.",
+    };
   }
 
   const atd2Names = new Set((atdParlay?.legs ?? []).map((l) => l.name));
 
   function pickAtdTriple(avoidTwo: boolean): typeof scored | null {
     const pool = avoidTwo ? scored.filter((x) => !atd2Names.has(x.p.name)) : scored;
+    let best: typeof scored | null = null;
+    let bestS = -Infinity;
     for (let i = 0; i < pool.length; i++) {
       for (let j = i + 1; j < pool.length; j++) {
         for (let k = j + 1; k < pool.length; k++) {
@@ -476,13 +555,19 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           const b = pool[j]!;
           const c = pool[k]!;
           const teams = new Set([a.p.team, b.p.team, c.p.team]);
-          const games = new Set([a.p.gameName, b.p.gameName, c.p.gameName]);
-          if (teams.size < 3 || games.size < 3) continue;
-          return [a, b, c];
+          const gset = new Set([a.p.gameName, b.p.gameName, c.p.gameName]);
+          if (teams.size < 3 || gset.size < 3) continue;
+          let h = pairHaircut(a.p, b.p) * pairHaircut(a.p, c.p) * pairHaircut(b.p, c.p);
+          h = Math.max(0.85, h);
+          const s = (a.s + b.s + c.s) * h;
+          if (s > bestS) {
+            bestS = s;
+            best = [a, b, c];
+          }
         }
       }
     }
-    return null;
+    return best;
   }
 
   const triple = pickAtdTriple(true) ?? pickAtdTriple(false);
@@ -491,18 +576,18 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     const combined = parlayProb(triple.map((x) => x.prob));
     atdParlay3 = {
       unit: "0.25u",
-      legs: triple.map((x, i) => ({
+      legs: triple.map((x) => ({
         name: x.p.name,
         team: x.p.team,
         opponent: x.p.opponent,
         american: x.american,
         prob: x.prob,
-        why: `${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}${i ? ` · independent of ${triple[0]!.p.team}` : ""}`,
+        why: `${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent} · posted ${formatPct(x.prob)} vs fair ${formatPct(x.fair)}`,
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Three independent games. Different teams, no same-backfield. Between the two-leg and the lotto.",
-      tape: "0.25u. One miss kills it. Prefer leftover names vs the two-leg when the board allows.",
+      why: "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
+      tape: "0.25u. Mid-board names. One miss kills it.",
     };
   }
 
@@ -520,22 +605,22 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   const multiRows: MultiRow[] = board
     .filter((p) => {
       if (p.position === "DST" || !p.isStarter) return false;
-      if (/out|ir|doubtful|suspended/i.test(p.injury ?? "") || /^(out|ir|doubtful)/i.test(p.status)) return false;
+      if (isSidelined(p.injury, p.status)) return false;
       if (!kickoffOk(p.startTime)) return false;
       return true;
     })
     .map((p) => {
       const two = twoPlusProb(p);
-      const atd = atdProb(p);
+      const atd = postedAtd(p);
       const asMulti = two.priced || two.prob >= 0.14 || (p.position === "RB" && two.prob >= 0.12);
       const kind: "multi_td" | "atd" = asMulti ? "multi_td" : "atd";
       const prob = kind === "multi_td" ? two.prob : atd;
-      const g = gameOfPlayer(p, games);
+      const g = gameOfPlayer(p, live);
       const total = g?.total ?? 44;
       const imp = g ? (p.home ? g.homeImplied : g.awayImplied) : null;
-      let s = prob * (kind === "multi_td" ? 12 : 6);
+      let s = (kind === "multi_td" ? two.prob : atdEdgeScore(atd, fairAtd(p, live))) * (kind === "multi_td" ? 8 : 1);
       if (p.position === "RB") s += 0.9;
-      else if (p.position === "QB") s += p.week && p.week.rushTd >= 0.35 ? 0.4 : 0.05;
+      else if (p.position === "QB") s += 0.1;
       else s += 0.1;
       if (p.oppRank >= 24) s += 0.3;
       if (total >= 47) s += 0.2;
@@ -603,22 +688,15 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   }
 
   const lottoPool = board
-    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime))
+    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime) && !isSidelined(p.injury, p.status))
     .map((p) => {
-      const raw = atdProb(p);
-      const match = p.oppQuality === "High" ? 1.1 : p.oppQuality === "Low" ? 0.9 : 1;
-      const prob = Math.min(0.55, raw * match);
-      return { p, prob, american: probToAmerican(prob) };
+      const posted = postedAtd(p);
+      const fair = fairAtd(p, live);
+      const s = atdEdgeScore(posted, fair);
+      return { p, prob: posted, american: posted > 0 ? probToAmerican(posted) : 0, s };
     })
-    .filter((x) => x.prob >= 0.14 && x.prob <= 0.42)
-    .sort((a, b) => {
-      const score = (x: typeof a) =>
-        (0.3 - Math.abs(x.prob - 0.26)) * 4 +
-        (x.p.itFactor ? 0.35 : 0) +
-        (x.p.cheapImpact ? 0.2 : 0) +
-        (x.p.oppRank >= 22 ? 0.2 : 0);
-      return score(b) - score(a);
-    });
+    .filter((x) => x.prob >= 0.18 && x.prob <= 0.42)
+    .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.28) - Math.abs(b.prob - 0.28));
 
   const lottoPicked: typeof lottoPool = [];
   const usedGames = new Set<string>();
@@ -703,8 +781,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       });
     }
     if (g.total != null && g.total >= 48) {
-      const expected = expectedTotal(g, players);
-      if (expected < g.total - 1) {
+      const { expected } = expectedTotal(g, players);
+      if (expected < g.total - 1.5) {
         fades.push({
           id: `fade-over-${g.id}`,
           title: `Fade Over ${g.total}`,

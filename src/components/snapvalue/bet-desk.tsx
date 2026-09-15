@@ -99,7 +99,7 @@ export function BetDesk({ games, players }: { games: Game[]; players: Player[] }
       <section>
         <h2 className="display text-2xl font-semibold">Three best bets</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Always includes an under when a total is posted. One unit each. Do not parlay all three.
+          Real edges only — no forced under. Empty slot beats a fake 1u pick. Do not parlay all three.
         </p>
         {desk.bestBets.length === 0 ? (
           <p className="text-muted-foreground text-sm">Waiting on this week’s spreads and totals.</p>
