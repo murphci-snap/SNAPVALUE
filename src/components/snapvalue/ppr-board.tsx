@@ -17,7 +17,7 @@ export function PprBoard({ data }: { data: SlateData }) {
         <h2 className="display text-2xl leading-none font-semibold">Weekly PPR ranks</h2>
         <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
           Regular weekly PPR for Week {week} only — not daily fantasy, not rest-of-season. Ranked by this week's
-          usage: props when posted, else Yahoo / CBS / FantasyPros.
+          full-PPR points (props usage when posted, else CBS / FantasyPros). No salary, no Val.
         </p>
       </header>
 

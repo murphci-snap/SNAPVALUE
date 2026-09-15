@@ -70,20 +70,18 @@ function dstPpr(p: Player): number {
   return 5.5;
 }
 
-/** This week's full-PPR only. Never Classic DK `projection`. */
+/** This week's full-PPR only. Never Classic DK `projection` / salary / Val. */
 export function pprPoints(p: Player): number {
   if (isSidelined(p.injury, p.status)) return 0;
   if (p.position === "DST") return dstPpr(p);
   const built = skillPpr(p);
-  const site = robustSiteConsensus(
+  const weeklyPprSites = robustSiteConsensus(
     (p.sources ?? [])
-      .filter((s) => s.kind === "site")
+      .filter((s) => s.kind === "site" && (s.id === "cbs" || s.id === "fantasypros"))
       .map((s) => ({ id: s.id, points: s.points })),
   );
-  let pts = 0;
-  if (built >= 4) pts = built;
-  else if (site != null && site >= 2) pts = site;
-  else if (built >= 2) pts = built;
+  let pts = built >= 2 ? built : 0;
+  if (pts < 2 && weeklyPprSites != null && weeklyPprSites >= 2) pts = weeklyPprSites;
   if (pts > 0 && isQuestionable(p.injury, p.status)) pts *= Q_HAIRCUT;
   return pts;
 }
@@ -95,6 +93,11 @@ function tapeFor(p: Player): string {
   return "";
 }
 
+function byWeeklyPpr(a: { ppr: number; player: Player }, b: { ppr: number; player: Player }): number {
+  if (b.ppr !== a.ppr) return b.ppr - a.ppr;
+  return a.player.name.localeCompare(b.player.name);
+}
+
 export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
   const pool = players.filter((p) => {
     if (p.showdownRole === "CPT") return false;
@@ -102,16 +105,16 @@ export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
     if (group === "FLEX") return p.position === "RB" || p.position === "WR" || p.position === "TE";
     return p.position === group;
   });
-  const scored = pool
-    .map((player) => ({
-      player,
-      ppr: Math.round(pprPoints(player) * 10) / 10,
-      tape: tapeFor(player),
-      rank: 0,
-    }))
+  const scored = pool.map((player) => ({
+    player,
+    ppr: Math.round(pprPoints(player) * 10) / 10,
+    tape: tapeFor(player),
+    rank: 0,
+  }));
+  return [...scored]
     .filter((r) => r.ppr > 0 || r.player.position === "DST")
-    .sort((a, b) => b.ppr - a.ppr || a.player.name.localeCompare(b.player.name));
-  return scored.map((r, i) => ({ ...r, rank: i + 1 }));
+    .sort(byWeeklyPpr)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
 export const PPR_GROUPS: { id: PprGroup; label: string }[] = [
