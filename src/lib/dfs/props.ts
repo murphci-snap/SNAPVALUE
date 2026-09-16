@@ -591,12 +591,15 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
 
   const fdIds = fd ? fdUpcomingEventIds(fd) : [];
   const espnIds = espnSb ? upcomingEspnEventIds(espnSb) : [];
-  const fdJobs = fdIds.flatMap((eventId) => FD_PROP_TABS.map((tab) => ({ eventId, tab })));
+  const atdJobs = fdIds.map((eventId) => ({ eventId, tab: "td-scorer-props" as const }));
+  const yardJobs = fdIds.flatMap((eventId) =>
+    (["passing-props", "rushing-props", "receiving-props"] as const).map((tab) => ({ eventId, tab })),
+  );
 
-  await Promise.all([
+  const fetchFd = (jobs: { eventId: number; tab: string }[], conc: number, deadline: number) =>
     poolMap(
-      fdJobs,
-      5,
+      jobs,
+      conc,
       async ({ eventId, tab }) => {
         const page = await settled(
           getJson<unknown>(
@@ -607,8 +610,12 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
         );
         if (page) parseFanDuelPlayerMarkets(page, byName, byNameTeam);
       },
-      14000,
-    ),
+      deadline,
+    );
+
+  await Promise.all([
+    fetchFd(atdJobs, 8, 18000),
+    fetchFd(yardJobs, 4, 16000),
     poolMap(
       espnIds,
       4,

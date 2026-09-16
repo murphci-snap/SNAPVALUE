@@ -523,14 +523,15 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return bothHigh || bothWx ? 0.92 : 1;
   }
 
-  function pickAtdPair(pool: typeof scored): [typeof scored[number], typeof scored[number]] | null {
+  function pickAtdPair(pool: typeof scored, allowSameGame = false): [typeof scored[number], typeof scored[number]] | null {
     let best: [typeof scored[number], typeof scored[number]] | null = null;
     let bestS = -Infinity;
     for (let i = 0; i < pool.length; i++) {
       for (let j = i + 1; j < pool.length; j++) {
         const a = pool[i]!;
         const b = pool[j]!;
-        if (a.p.team === b.p.team || a.p.gameName === b.p.gameName) continue;
+        if (a.p.team === b.p.team) continue;
+        if (!allowSameGame && a.p.gameName === b.p.gameName) continue;
         const h = pairHaircut(a.p, b.p);
         const s = (a.s + b.s) * h;
         if (s > bestS) {
@@ -543,7 +544,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   }
 
   const pairEdged = pickAtdPair(scored);
-  const pair = pairEdged ?? pickAtdPair(postedBest);
+  const pair = pairEdged ?? pickAtdPair(postedBest) ?? pickAtdPair(postedBest, true);
   const pairLean = !pairEdged && !!pair;
   let atdParlay: TdParlay | null = null;
   if (pair) {
