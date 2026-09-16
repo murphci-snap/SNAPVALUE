@@ -131,6 +131,41 @@ export function PlayerBoard({
             {p === "ALL" ? "All" : p}
           </button>
         ))}
+      </div>
+
+      <div>
+        <p className="text-faint mb-1.5 text-[10px] tracking-[0.16em] uppercase">Contest lens</p>
+        <div className="flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
+          {(["all", "cash", "gpp"] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setLens(id);
+                if (id !== "all") {
+                  setSort("projection");
+                  setDir("desc");
+                }
+              }}
+              className={cn(
+                "h-11 min-h-11 flex-1 rounded-md px-2 text-center text-sm font-semibold transition-colors duration-150",
+                lens === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {id === "all" ? "All" : id === "cash" ? "Cash" : "GPP"}
+            </button>
+          ))}
+        </div>
+        <p className="text-muted-foreground mt-2 text-sm">
+          {lens === "cash"
+            ? "Cash · Double Up floors. Chalk is fine. Best Value sorts by floor."
+            : lens === "gpp"
+              ? "GPP · Milly leverage. Lower Own%, IT, unique value. Studs stay."
+              : "All players. Cash = Double Up. GPP = Milly."}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-48 flex-1">
           <Input
             value={q}
@@ -153,36 +188,7 @@ export function PlayerBoard({
         >
           IT Factor
         </Button>
-        <div className="flex rounded-full bg-secondary p-1 shadow-[var(--shadow-border)]">
-          {(["all", "cash", "gpp"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => {
-                setLens(id);
-                if (id !== "all") {
-                  setSort("projection");
-                  setDir("desc");
-                }
-              }}
-              className={cn(
-                "h-9 rounded-full px-3 text-sm font-medium transition-colors duration-150",
-                lens === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {id === "all" ? "All" : id === "cash" ? "Cash" : "GPP"}
-            </button>
-          ))}
-        </div>
       </div>
-      {lens !== "all" && (
-        <p className="text-muted-foreground -mt-1 text-sm">
-          {lens === "cash"
-            ? "Cash lens · Double Up floors. Chalk is fine. Sorted by floor, not leverage."
-            : "GPP lens · Milly leverage. Lower Own%, IT, unique value. Studs stay in the mix."}
-        </p>
-      )}
-
       <ItFactorRack data={data} pos={pos} onSelect={setSelected} />
       <CheapImpactRack data={data} pos={pos} onSelect={setSelected} />
 
