@@ -388,11 +388,16 @@ function fairAtd(p: Player, games: Game[]): number {
   let lambda = 0;
   if (gp) {
     lambda = (st!.rushTd + st!.recTd) / gp;
-    if (p.position === "QB") lambda += (st!.passTd / gp) * 0.12;
   }
-  if (lambda < 0.12) {
+  if (p.position === "QB") {
+    if (p.week && p.week.rushTd > 0) lambda = Math.max(lambda, p.week.rushTd);
+    if (lambda < 0.08 && gp && st && st.rushYds > 0) lambda = Math.max(lambda, st.rushYds / gp / 70);
+  }
+  if (lambda < 0.1) {
     const cons = p.consensusProjection ?? p.fppg;
-    lambda = p.position === "RB" ? cons / 22 : p.position === "QB" ? cons / 28 : cons / 24;
+    if (p.position === "RB") lambda = cons / 22;
+    else if (p.position === "QB") lambda = Math.min(0.28, cons / 90);
+    else lambda = cons / 24;
   }
   if (p.oppRank >= 24) lambda *= 1.12;
   else if (p.oppRank <= 8) lambda *= 0.9;
@@ -401,7 +406,8 @@ function fairAtd(p: Player, games: Game[]): number {
   if (imp != null && imp >= 26) lambda *= 1.08;
   if (imp != null && imp <= 17) lambda *= 0.9;
   if (g?.total != null && g.total >= 49) lambda *= 1.05;
-  return clamp(1 - Math.exp(-Math.max(0.05, lambda)), 0.1, 0.52);
+  const hi = p.position === "QB" ? 0.42 : 0.52;
+  return clamp(1 - Math.exp(-Math.max(0.05, lambda)), 0.08, hi);
 }
 
 function atdEdgeScore(posted: number, fair: number): number {
@@ -553,6 +559,47 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
     return bothHigh || bothWx ? 0.92 : 1;
   }
 
+  function qbCount(xs: { p: Player }[]): number {
+    return xs.filter((x) => x.p.position === "QB").length;
+  }
+
+  function bestSkillFree(
+    pool: typeof scored,
+    usedGames: Set<string>,
+    usedTeams: Set<string>,
+    usedNames: Set<string>,
+  ): (typeof scored)[number] | null {
+    let best: (typeof scored)[number] | null = null;
+    for (const x of pool) {
+      if (x.p.position === "QB") continue;
+      if (usedNames.has(x.p.name) || usedTeams.has(x.p.team) || usedGames.has(x.p.gameName)) continue;
+      if (!best || x.edge > best.edge) best = x;
+    }
+    return best;
+  }
+
+  function extraQbJustified(combo: typeof scored, pool: typeof scored): boolean {
+    const qbs = combo.filter((x) => x.p.position === "QB").sort((a, b) => b.edge - a.edge);
+    if (qbs.length <= 1) return true;
+    for (const extra of qbs.slice(1)) {
+      const others = combo.filter((x) => x.p.id !== extra.p.id);
+      const skill = bestSkillFree(
+        pool,
+        new Set(others.map((x) => x.p.gameName)),
+        new Set(others.map((x) => x.p.team)),
+        new Set(others.map((x) => x.p.name)),
+      );
+      if (skill && extra.edge < skill.edge + 0.04) return false;
+    }
+    return true;
+  }
+
+  function comboAdj(xs: typeof scored, h: number): number {
+    const s = xs.reduce((n, x) => n + x.s, 0) * h;
+    const q = qbCount(xs);
+    return s - (q > 1 ? 0.05 * (q - 1) : 0);
+  }
+
   function pickAtdPair(pool: typeof scored): [typeof scored[number], typeof scored[number]] | null {
     let best: [typeof scored[number], typeof scored[number]] | null = null;
     let bestS = -Infinity;
@@ -561,8 +608,10 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
         const a = pool[i]!;
         const b = pool[j]!;
         if (a.p.team === b.p.team || a.p.gameName === b.p.gameName) continue;
+        const combo = [a, b];
+        if (qbCount(combo) > 1 && !extraQbJustified(combo, pool)) continue;
         const h = pairHaircut(a.p, b.p);
-        const s = (a.s + b.s) * h;
+        const s = comboAdj(combo, h);
         if (s > bestS) {
           bestS = s;
           best = [a, b];
@@ -622,12 +671,14 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
           const teams = new Set([a.p.team, b.p.team, c.p.team]);
           const gset = new Set([a.p.gameName, b.p.gameName, c.p.gameName]);
           if (teams.size < 3 || gset.size < 3) continue;
+          const combo = [a, b, c];
+          if (qbCount(combo) > 1 && !extraQbJustified(combo, pool)) continue;
           let h = pairHaircut(a.p, b.p) * pairHaircut(a.p, c.p) * pairHaircut(b.p, c.p);
           h = Math.max(0.85, h);
-          const s = (a.s + b.s + c.s) * h;
+          const s = comboAdj(combo, h);
           if (s > bestS) {
             bestS = s;
-            best = [a, b, c];
+            best = combo;
           }
         }
       }
@@ -657,7 +708,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
+      why: "Three independent games. Soft-cap one QB unless another QB’s real ATD edge beats skill on a free game. Ranked by posted ATD edge, not pass-TD padding.",
       tape: `${unit} cap. Mid-board names. One miss kills it.`,
     };
   }
