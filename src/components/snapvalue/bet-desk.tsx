@@ -279,7 +279,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">No posted anytime-TD prices on remaining games.</p>
+          <p className="text-muted-foreground text-sm">Need 2 priced anytime-TD names on separate remaining games.</p>
         )}
       </section>
 
@@ -317,7 +317,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay3.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">No posted anytime-TD prices on remaining games.</p>
+          <p className="text-muted-foreground text-sm">Need 3 priced anytime-TD names on separate remaining games.</p>
         )}
       </section>
 
@@ -365,7 +365,7 @@ export function BetDesk({
       <section>
         <h2 className="display text-2xl font-semibold">Lotto ticket</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          3–5 player anytime TD on remaining games. 0.1u. One miss kills it.
+          Five-player anytime TD. Posted prices only. 0.1u. One miss kills it.
         </p>
         {desk.lottoTicket ? (
           <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
@@ -396,7 +396,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.lottoTicket.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">No posted anytime-TD prices on remaining games.</p>
+          <p className="text-muted-foreground text-sm">Need 5 priced anytime-TD names on separate remaining games.</p>
         )}
       </section>
     </div>

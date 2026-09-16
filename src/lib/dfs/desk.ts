@@ -489,32 +489,28 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     .map((p) => {
       const posted = postedAtd(p);
       const fair = fairAtd(p, live);
-      const priced = posted >= 0.08 && posted < 0.85;
-      const prob = priced ? posted : fair;
-      const edge = priced ? fair - posted : 0;
-      const s = priced
-        ? atdEdgeScore(posted, fair)
-        : fair + (fair >= 0.28 && fair <= 0.42 ? 0.05 : 0) - 0.06;
+      const edge = fair - posted;
+      const s = atdEdgeScore(posted, fair);
       return {
         p,
         posted,
-        priced,
-        prob,
+        priced: true as const,
+        prob: posted,
         fair,
         edge,
         s,
-        american: prob > 0 ? probToAmerican(prob) : 0,
+        american: posted > 0 ? probToAmerican(posted) : 0,
       };
     })
-    .filter((x) => x.prob >= 0.18 && x.prob < 0.85)
-    .sort((a, b) => Number(b.priced) - Number(a.priced) || b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
+    .filter((x) => x.prob >= 0.08 && x.prob < 0.85);
 
-  const scored = atdRows.filter((x) => {
-    if (!x.priced) return false;
-    if (x.prob >= 0.62 && x.edge < 0.05) return false;
-    return x.s > -0.1;
-  });
-  const postedBest = atdRows.filter((x) => x.priced);
+  const scored = atdRows
+    .filter((x) => {
+      if (x.prob >= 0.62 && x.edge < 0.05) return false;
+      return x.s > -0.1;
+    })
+    .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
+  const postedBest = [...atdRows].sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
 
   function pairHaircut(a: Player, b: Player): number {
     const ga = gameOf(a, live);
@@ -525,15 +521,14 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return bothHigh || bothWx ? 0.92 : 1;
   }
 
-  function pickAtdPair(pool: typeof scored, allowSameGame = false): [typeof scored[number], typeof scored[number]] | null {
+  function pickAtdPair(pool: typeof scored): [typeof scored[number], typeof scored[number]] | null {
     let best: [typeof scored[number], typeof scored[number]] | null = null;
     let bestS = -Infinity;
     for (let i = 0; i < pool.length; i++) {
       for (let j = i + 1; j < pool.length; j++) {
         const a = pool[i]!;
         const b = pool[j]!;
-        if (a.p.team === b.p.team) continue;
-        if (!allowSameGame && a.p.gameName === b.p.gameName) continue;
+        if (a.p.team === b.p.team || a.p.gameName === b.p.gameName) continue;
         const h = pairHaircut(a.p, b.p);
         const s = (a.s + b.s) * h;
         if (s > bestS) {
@@ -545,16 +540,14 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return best;
   }
 
-  const pairEdged = pickAtdPair(scored);
-  const pair = pairEdged ?? pickAtdPair(postedBest) ?? pickAtdPair(atdRows) ?? pickAtdPair(atdRows, true);
-  const pairLean = !!pair && (!pairEdged || pair.some((x) => !x.priced));
+  const pair = pickAtdPair(scored) ?? pickAtdPair(postedBest);
   let atdParlay: TdParlay | null = null;
   if (pair) {
     const [a, b] = pair;
     const h = pairHaircut(a.p, b.p);
     const combined = parlayProb([a.prob, b.prob]) * h;
-    const booksA = a.priced ? a.p.props?.books?.join("/") || "Vegas" : "model";
-    const booksB = b.priced ? b.p.props?.books?.join("/") || "Vegas" : "model";
+    const booksA = a.p.props?.books?.join("/") || "Vegas";
+    const booksB = b.p.props?.books?.join("/") || "Vegas";
     atdParlay = {
       legs: [
         {
@@ -563,7 +556,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           opponent: a.p.opponent,
           american: a.american,
           prob: a.prob,
-          why: `${a.p.team} ${a.p.home ? "vs" : "@"} ${a.p.opponent} · ${a.priced ? `posted ${formatPct(a.prob)} vs fair ${formatPct(a.fair)} (${booksA})` : `model ATD ${formatPct(a.fair)} · no posted price`}`,
+          why: `${a.p.team} ${a.p.home ? "vs" : "@"} ${a.p.opponent} · posted ${formatPct(a.prob)} vs fair ${formatPct(a.fair)} (${booksA})`,
         },
         {
           name: b.p.name,
@@ -571,18 +564,14 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           opponent: b.p.opponent,
           american: b.american,
           prob: b.prob,
-          why: `${b.p.team} ${b.p.home ? "vs" : "@"} ${b.p.opponent} · ${b.priced ? `posted ${formatPct(b.prob)} vs fair ${formatPct(b.fair)} (${booksB})` : `model ATD ${formatPct(b.fair)} · no posted price`}`,
+          why: `${b.p.team} ${b.p.home ? "vs" : "@"} ${b.p.opponent} · posted ${formatPct(b.prob)} vs fair ${formatPct(b.fair)} (${booksB})`,
         },
       ],
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: pairLean
-        ? "Best available · model lean. Posted ATDs were too thin to fill two independent games."
-        : `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
-      tape: pairLean
-        ? "best available · model lean"
-        : "Mid-board ATD (roughly 28–42%) with a real edge beats a −150 chalk name. Cross-game only.",
-      unit: pairLean ? "0.1u" : atd2Unit(a.edge + b.edge),
+      why: `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
+      tape: "Mid-board ATD (roughly 28–42%) with a real edge beats a −150 chalk name. Cross-game only. Empty if books have not posted enough prices.",
+      unit: atd2Unit(a.edge + b.edge),
     };
   }
 
@@ -614,19 +603,12 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return best;
   }
 
-  const tripleEdged = pickAtdTriple(scored, true) ?? pickAtdTriple(scored, false);
-  const triple =
-    tripleEdged ??
-    pickAtdTriple(postedBest, true) ??
-    pickAtdTriple(postedBest, false) ??
-    pickAtdTriple(atdRows, true) ??
-    pickAtdTriple(atdRows, false);
-  const tripleLean = !!triple && (!tripleEdged || triple.some((x) => !x.priced));
+  const triple = pickAtdTriple(scored, true) ?? pickAtdTriple(scored, false) ?? pickAtdTriple(postedBest, true) ?? pickAtdTriple(postedBest, false);
   let atdParlay3: TdParlay | null = null;
   if (triple) {
     const combined = parlayProb(triple.map((x) => x.prob));
     const edgeSum = triple.reduce((s, x) => s + x.edge, 0);
-    const unit = tripleLean ? "0.1u" : edgeSum >= 0.12 ? "0.25u" : "0.1u";
+    const unit = edgeSum >= 0.12 ? "0.25u" : "0.1u";
     atdParlay3 = {
       unit,
       legs: triple.map((x) => ({
@@ -635,14 +617,12 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         opponent: x.p.opponent,
         american: x.american,
         prob: x.prob,
-        why: `${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent} · ${x.priced ? `posted ${formatPct(x.prob)} vs fair ${formatPct(x.fair)}` : `model ATD ${formatPct(x.fair)} · no posted price`}`,
+        why: `${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent} · posted ${formatPct(x.prob)} vs fair ${formatPct(x.fair)}`,
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: tripleLean
-        ? "Best available · model lean. Posted ATDs were too thin to fill three independent games."
-        : "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
-      tape: tripleLean ? "best available · model lean" : `${unit} cap. Mid-board names. One miss kills it.`,
+      why: "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
+      tape: `${unit} cap. Mid-board names. One miss kills it.`,
     };
   }
 
@@ -770,16 +750,15 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return out;
   }
 
-  const lottoN = Math.min(5, Math.max(3, live.length), live.length);
-  const lottoMid = atdRows.filter((x) => x.prob >= 0.18 && x.prob <= 0.42);
-  const lottoWide = atdRows.filter((x) => x.prob >= 0.18 && x.prob <= 0.55);
+  const lottoN = 5;
+  const lottoMid = postedBest.filter((x) => x.prob >= 0.18 && x.prob <= 0.42);
+  const lottoWide = postedBest.filter((x) => x.prob >= 0.14 && x.prob <= 0.55);
   let lottoPicked = pickLotto(lottoMid, lottoN);
-  if (lottoPicked.length < Math.min(3, live.length)) lottoPicked = pickLotto(lottoWide, lottoN);
-  if (lottoPicked.length < Math.min(3, live.length)) lottoPicked = pickLotto(atdRows, lottoN);
-  const lottoLean = lottoPicked.some((x) => !x.priced);
+  if (lottoPicked.length < 5) lottoPicked = pickLotto(lottoWide, lottoN);
+  if (lottoPicked.length < 5) lottoPicked = pickLotto(postedBest, lottoN);
 
   let lottoTicket: TdParlay | null = null;
-  if (lottoPicked.length >= 3) {
+  if (lottoPicked.length >= 5) {
     const combined = parlayProb(lottoPicked.map((x) => x.prob));
     lottoTicket = {
       legs: lottoPicked.map((x) => ({
@@ -788,16 +767,12 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         opponent: x.p.opponent,
         american: x.american,
         prob: x.prob,
-        why: `${x.p.position} · ${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}${x.priced ? "" : " · model lean"}`,
+        why: `${x.p.position} · ${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}`,
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: lottoLean
-        ? `Best available · model lean. ${lottoPicked.length} legs on remaining games. 0.1u cap.`
-        : `${lottoPicked.length} independent games. Long-shot ATD parlay — one miss kills it. Fun only, 0.1u cap.`,
-      tape: lottoLean
-        ? "best available · model lean"
-        : "Lotto: mid-price ATD names, no same-game stack. No IT / bargain juice in the score.",
+      why: "Five independent games. Posted anytime-TD prices only. Long-shot — one miss kills it. 0.1u cap.",
+      tape: "Lotto: mid-price ATD names, no same-game stack. Empty until five priced games exist.",
       unit: "0.1u",
     };
   }

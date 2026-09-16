@@ -133,7 +133,7 @@ function classifyBovada(desc: string): keyof Omit<PropLine, "books" | "anytimeTd
   ) {
     return "twoPlus";
   }
-  if (d.includes("anytime touchdown")) return "atd";
+  if (d.includes("anytime touchdown") || d.includes("anytime td") || d.includes("anytime scorer")) return "atd";
   if (d.includes("passing yards")) return "passYds";
   if (d.includes("passing touchdown")) return "passTd";
   if (d.includes("interceptions thrown") || d.endsWith("interceptions") || d.includes("total interceptions")) {
@@ -159,6 +159,7 @@ type BovadaMarket = {
 };
 type BovadaEvent = {
   description?: string;
+  link?: string;
   competitors?: { name?: string; abbreviation?: string; home?: boolean; description?: string }[];
   displayGroups?: { description?: string; markets?: BovadaMarket[] }[];
 };
@@ -217,8 +218,10 @@ function parseBovada(data: unknown, byName: Map<string, PlayerProps>, byNameTeam
 
         if (kind === "atd" || kind === "twoPlus") {
           for (const o of outs) {
-            const tag = parsePlayerTag(o.description ?? "");
-            if (!tag) continue;
+            const tag =
+              parsePlayerTag(o.description ?? "") ??
+              (o.description?.trim() ? { name: o.description.replace(/\s+-\s+\d[A-Z].*$/, "").trim(), team: "" } : null);
+            if (!tag?.name) continue;
             const amer = parseAmerican(o.price?.american);
             if (amer == null) continue;
             const row = ensure(byName, byNameTeam, tag.name, tag.team);
@@ -255,6 +258,19 @@ function parseBovada(data: unknown, byName: Map<string, PlayerProps>, byNameTeam
       games.push({ homeAbbr: home, awayAbbr: away, total, spread, books: total != null ? ["Vegas"] : [] });
     }
   }
+}
+
+function bovadaLinksMissingTd(data: unknown): string[] {
+  const root = Array.isArray(data) ? data[0] : data;
+  const events = (root as { events?: BovadaEvent[] })?.events ?? [];
+  const links: string[] = [];
+  for (const ev of events) {
+    if (!ev.link) continue;
+    const groups = (ev.displayGroups ?? []).map((d) => (d.description ?? "").toLowerCase());
+    if (groups.some((g) => g.includes("td scorer") || g.includes("touchdown scorer"))) continue;
+    links.push(ev.link);
+  }
+  return links;
 }
 
 type FdMarket = {
@@ -591,6 +607,7 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
 
   const fdIds = fd ? fdUpcomingEventIds(fd) : [];
   const espnIds = espnSb ? upcomingEspnEventIds(espnSb) : [];
+  const bovadaTdLinks = bovada ? bovadaLinksMissingTd(bovada) : [];
   const atdJobs = fdIds.map((eventId) => ({ eventId, tab: "td-scorer-props" as const }));
   const yardJobs = fdIds.flatMap((eventId) =>
     (["passing-props", "rushing-props", "receiving-props"] as const).map((tab) => ({ eventId, tab })),
@@ -616,6 +633,21 @@ export async function loadProps(): Promise<PropsBundle & { byEspnId: EspnPropInd
   await Promise.all([
     fetchFd(atdJobs, 8, 18000),
     fetchFd(yardJobs, 4, 16000),
+    poolMap(
+      bovadaTdLinks,
+      4,
+      async (link) => {
+        const page = await settled(
+          getJson<unknown>(
+            `https://www.bovada.lv/services/sports/event/coupon/events/A/description${link}?lang=en`,
+            undefined,
+            10000,
+          ),
+        );
+        if (page) parseBovada(page, byName, byNameTeam, games);
+      },
+      14000,
+    ),
     poolMap(
       espnIds,
       4,
