@@ -485,34 +485,36 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   };
 
   const atdRows = board
-    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime) && !isSidelined(p.injury, p.status))
+    .filter((p) => p.position !== "DST" && p.position !== "K" && p.isStarter && kickoffOk(p.startTime) && !isSidelined(p.injury, p.status))
     .map((p) => {
       const posted = postedAtd(p);
       const fair = fairAtd(p, live);
-      const edge = fair - posted;
-      const s = atdEdgeScore(posted, fair);
+      const priced = posted >= 0.08 && posted < 0.85;
+      const prob = priced ? posted : fair;
+      const edge = priced ? fair - posted : 0;
+      const s = priced
+        ? atdEdgeScore(posted, fair)
+        : fair + (fair >= 0.28 && fair <= 0.42 ? 0.05 : 0) - 0.06;
       return {
         p,
-        prob: posted,
+        posted,
+        priced,
+        prob,
         fair,
         edge,
         s,
-        american: posted > 0 ? probToAmerican(posted) : 0,
+        american: prob > 0 ? probToAmerican(prob) : 0,
       };
     })
-    .filter((x) => x.prob > 0.02 && x.prob < 0.85);
+    .filter((x) => x.prob >= 0.18 && x.prob < 0.85)
+    .sort((a, b) => Number(b.priced) - Number(a.priced) || b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
 
-  const scored = atdRows
-    .filter((x) => {
-      if (x.prob < 0.14 || x.prob > 0.78) return false;
-      if (x.prob >= 0.62 && x.edge < 0.05) return false;
-      return x.s > -0.1;
-    })
-    .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
-
-  const postedBest = [...atdRows].sort(
-    (a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35),
-  );
+  const scored = atdRows.filter((x) => {
+    if (!x.priced) return false;
+    if (x.prob >= 0.62 && x.edge < 0.05) return false;
+    return x.s > -0.1;
+  });
+  const postedBest = atdRows.filter((x) => x.priced);
 
   function pairHaircut(a: Player, b: Player): number {
     const ga = gameOf(a, live);
@@ -544,15 +546,15 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   }
 
   const pairEdged = pickAtdPair(scored);
-  const pair = pairEdged ?? pickAtdPair(postedBest) ?? pickAtdPair(postedBest, true);
-  const pairLean = !pairEdged && !!pair;
+  const pair = pairEdged ?? pickAtdPair(postedBest) ?? pickAtdPair(atdRows) ?? pickAtdPair(atdRows, true);
+  const pairLean = !!pair && (!pairEdged || pair.some((x) => !x.priced));
   let atdParlay: TdParlay | null = null;
   if (pair) {
     const [a, b] = pair;
     const h = pairHaircut(a.p, b.p);
     const combined = parlayProb([a.prob, b.prob]) * h;
-    const booksA = a.p.props?.books?.join("/") || "Vegas";
-    const booksB = b.p.props?.books?.join("/") || "Vegas";
+    const booksA = a.priced ? a.p.props?.books?.join("/") || "Vegas" : "model";
+    const booksB = b.priced ? b.p.props?.books?.join("/") || "Vegas" : "model";
     atdParlay = {
       legs: [
         {
@@ -561,7 +563,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           opponent: a.p.opponent,
           american: a.american,
           prob: a.prob,
-          why: `${a.p.team} ${a.p.home ? "vs" : "@"} ${a.p.opponent} · posted ${formatPct(a.prob)} vs fair ${formatPct(a.fair)} (${booksA})`,
+          why: `${a.p.team} ${a.p.home ? "vs" : "@"} ${a.p.opponent} · ${a.priced ? `posted ${formatPct(a.prob)} vs fair ${formatPct(a.fair)} (${booksA})` : `model ATD ${formatPct(a.fair)} · no posted price`}`,
         },
         {
           name: b.p.name,
@@ -569,13 +571,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
           opponent: b.p.opponent,
           american: b.american,
           prob: b.prob,
-          why: `${b.p.team} ${b.p.home ? "vs" : "@"} ${b.p.opponent} · posted ${formatPct(b.prob)} vs fair ${formatPct(b.fair)} (${booksB})`,
+          why: `${b.p.team} ${b.p.home ? "vs" : "@"} ${b.p.opponent} · ${b.priced ? `posted ${formatPct(b.prob)} vs fair ${formatPct(b.fair)} (${booksB})` : `model ATD ${formatPct(b.fair)} · no posted price`}`,
         },
       ],
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
       why: pairLean
-        ? "Best available posted ATDs on remaining games. Model lean — thin edge board."
+        ? "Best available · model lean. Posted ATDs were too thin to fill two independent games."
         : `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
       tape: pairLean
         ? "best available · model lean"
@@ -613,8 +615,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   }
 
   const tripleEdged = pickAtdTriple(scored, true) ?? pickAtdTriple(scored, false);
-  const triple = tripleEdged ?? pickAtdTriple(postedBest, true) ?? pickAtdTriple(postedBest, false);
-  const tripleLean = !tripleEdged && !!triple;
+  const triple =
+    tripleEdged ??
+    pickAtdTriple(postedBest, true) ??
+    pickAtdTriple(postedBest, false) ??
+    pickAtdTriple(atdRows, true) ??
+    pickAtdTriple(atdRows, false);
+  const tripleLean = !!triple && (!tripleEdged || triple.some((x) => !x.priced));
   let atdParlay3: TdParlay | null = null;
   if (triple) {
     const combined = parlayProb(triple.map((x) => x.prob));
@@ -628,12 +635,12 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         opponent: x.p.opponent,
         american: x.american,
         prob: x.prob,
-        why: `${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent} · posted ${formatPct(x.prob)} vs fair ${formatPct(x.fair)}`,
+        why: `${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent} · ${x.priced ? `posted ${formatPct(x.prob)} vs fair ${formatPct(x.fair)}` : `model ATD ${formatPct(x.fair)} · no posted price`}`,
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
       why: tripleLean
-        ? "Best available posted ATDs on remaining games. Model lean — thin edge board."
+        ? "Best available · model lean. Posted ATDs were too thin to fill three independent games."
         : "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
       tape: tripleLean ? "best available · model lean" : `${unit} cap. Mid-board names. One miss kills it.`,
     };
@@ -763,27 +770,16 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return out;
   }
 
-  const lottoN = Math.min(5, live.length);
-  const lottoMid = atdRows
-    .filter((x) => x.prob >= 0.18 && x.prob <= 0.42)
-    .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.28) - Math.abs(b.prob - 0.28));
-  const lottoWide = atdRows
-    .filter((x) => x.prob >= 0.14 && x.prob <= 0.55)
-    .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.28) - Math.abs(b.prob - 0.28));
+  const lottoN = Math.min(5, Math.max(3, live.length), live.length);
+  const lottoMid = atdRows.filter((x) => x.prob >= 0.18 && x.prob <= 0.42);
+  const lottoWide = atdRows.filter((x) => x.prob >= 0.18 && x.prob <= 0.55);
   let lottoPicked = pickLotto(lottoMid, lottoN);
-  let lottoLean = false;
-  if (lottoPicked.length < Math.min(lottoN, 3)) {
-    lottoPicked = pickLotto(lottoWide, lottoN);
-    lottoLean = true;
-  }
-  if (lottoPicked.length < Math.min(lottoN, 3)) {
-    lottoPicked = pickLotto(postedBest, lottoN);
-    lottoLean = true;
-  }
+  if (lottoPicked.length < Math.min(3, live.length)) lottoPicked = pickLotto(lottoWide, lottoN);
+  if (lottoPicked.length < Math.min(3, live.length)) lottoPicked = pickLotto(atdRows, lottoN);
+  const lottoLean = lottoPicked.some((x) => !x.priced);
 
   let lottoTicket: TdParlay | null = null;
-  const lottoNeed = Math.min(lottoN, Math.max(3, live.length > 3 ? 3 : live.length));
-  if (lottoPicked.length >= lottoNeed && lottoPicked.length >= 3) {
+  if (lottoPicked.length >= 3) {
     const combined = parlayProb(lottoPicked.map((x) => x.prob));
     lottoTicket = {
       legs: lottoPicked.map((x) => ({
@@ -792,12 +788,12 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         opponent: x.p.opponent,
         american: x.american,
         prob: x.prob,
-        why: `${x.p.position} · ${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}`,
+        why: `${x.p.position} · ${x.p.team} ${x.p.home ? "vs" : "@"} ${x.p.opponent}${x.priced ? "" : " · model lean"}`,
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
       why: lottoLean
-        ? `Best available posted ATDs on remaining games (${lottoPicked.length} legs). Model lean. 0.1u cap.`
+        ? `Best available · model lean. ${lottoPicked.length} legs on remaining games. 0.1u cap.`
         : `${lottoPicked.length} independent games. Long-shot ATD parlay — one miss kills it. Fun only, 0.1u cap.`,
       tape: lottoLean
         ? "best available · model lean"
