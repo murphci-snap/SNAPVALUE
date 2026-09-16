@@ -160,6 +160,7 @@ type BovadaMarket = {
 type BovadaEvent = {
   description?: string;
   link?: string;
+  startTime?: number;
   competitors?: { name?: string; abbreviation?: string; home?: boolean; description?: string }[];
   displayGroups?: { description?: string; markets?: BovadaMarket[] }[];
 };
@@ -263,9 +264,13 @@ function parseBovada(data: unknown, byName: Map<string, PlayerProps>, byNameTeam
 function bovadaLinksMissingTd(data: unknown): string[] {
   const root = Array.isArray(data) ? data[0] : data;
   const events = (root as { events?: BovadaEvent[] })?.events ?? [];
+  const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+  const horizon = Date.now() + 7.5 * 24 * 60 * 60 * 1000;
   const links: string[] = [];
   for (const ev of events) {
     if (!ev.link) continue;
+    const t = ev.startTime ?? 0;
+    if (t && (t < cutoff || t > horizon)) continue;
     const groups = (ev.displayGroups ?? []).map((d) => (d.description ?? "").toLowerCase());
     if (groups.some((g) => g.includes("td scorer") || g.includes("touchdown scorer"))) continue;
     links.push(ev.link);
@@ -458,10 +463,19 @@ function classifyFdMarket(marketType: string, marketName: string): keyof Omit<Pr
   return null;
 }
 
-function fdPlayerName(marketName: string, runnerName: string): string {
+function fdPlayerName(marketName: string, runnerName: string, kind?: string): string {
+  const runner = runnerName.replace(/\s+(Over|Under|Yes|No)$/i, "").trim();
+  if (kind === "atd" || kind === "twoPlus") return runner;
   const fromMarket = marketName.split(" - ")[0]?.trim() ?? "";
-  if (fromMarket && fromMarket.length > 2 && !/^(over|under|yes|no)\b/i.test(fromMarket)) return fromMarket;
-  return runnerName.replace(/\s+(Over|Under|Yes|No)$/i, "").trim();
+  if (
+    fromMarket &&
+    fromMarket.length > 2 &&
+    !/^(over|under|yes|no|any time|anytime)\b/i.test(fromMarket) &&
+    !/scorer|touchdowns?|passing yards|rushing yards|receiving yards|receptions/i.test(fromMarket)
+  ) {
+    return fromMarket;
+  }
+  return runner;
 }
 
 function parseFanDuelPlayerMarkets(
@@ -476,7 +490,7 @@ function parseFanDuelPlayerMarkets(
     const runners = m.runners ?? [];
     if (kind === "atd" || kind === "twoPlus") {
       for (const r of runners) {
-        const name = fdPlayerName(m.marketName ?? "", r.runnerName ?? "");
+        const name = fdPlayerName(m.marketName ?? "", r.runnerName ?? "", kind);
         const amer = r.winRunnerOdds?.americanDisplayOdds?.americanOddsInt ?? r.winRunnerOdds?.americanDisplayOdds?.americanOdds;
         if (!name || amer == null) continue;
         const p = americanToProb(Number(amer));
@@ -489,7 +503,7 @@ function parseFanDuelPlayerMarkets(
     const over = runners.find((r) => r.result?.type === "OVER" || /^over/i.test(r.runnerName ?? ""));
     const line = Number(over?.handicap);
     if (!Number.isFinite(line) || line <= 0) continue;
-    const name = fdPlayerName(m.marketName ?? "", over?.runnerName ?? runners[0]?.runnerName ?? "");
+    const name = fdPlayerName(m.marketName ?? "", over?.runnerName ?? runners[0]?.runnerName ?? "", kind);
     if (!name) continue;
     setNum(ensure(byName, byNameTeam, name, ""), kind, line, "FanDuel");
   }
@@ -498,11 +512,12 @@ function parseFanDuelPlayerMarkets(
 function fdUpcomingEventIds(data: unknown): number[] {
   const events = (data as { attachments?: { events?: Record<string, FdEvent & { openDate?: string }> } }).attachments?.events ?? {};
   const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+  const horizon = Date.now() + 7.5 * 24 * 60 * 60 * 1000;
   const ids: number[] = [];
   for (const ev of Object.values(events)) {
     if (!ev.eventId || !ev.name?.includes("@")) continue;
     const t = Date.parse(ev.openDate ?? "");
-    if (Number.isFinite(t) && t < cutoff) continue;
+    if (Number.isFinite(t) && (t < cutoff || t > horizon)) continue;
     ids.push(ev.eventId);
   }
   return ids;
@@ -558,6 +573,7 @@ function parseEspnDkPropBets(data: unknown, byEspnId: EspnPropIndex) {
     const row = ensureEspn(byEspnId, espnId);
     if (kind === "atd") {
       if (line > 0 && line < 1) setAtd(row, line, "DraftKings");
+      else if (Math.abs(line) >= 100) setAtd(row, americanToProb(line), "DraftKings");
       continue;
     }
     if (!Number.isFinite(line) || line <= 0) continue;

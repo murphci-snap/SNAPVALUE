@@ -1,4 +1,4 @@
-import type { MatchupQuality, Position, PropLine, SeasonStats, WeekProjection } from "./types";
+import type { MatchupQuality, Player, Position, PropLine, SeasonStats, WeekProjection } from "./types";
 import { S } from "./constants";
 
 export function num(stats: Record<string, number> | undefined, id: number): number {
@@ -291,4 +291,42 @@ export function round1(n: number): number {
 
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+export type BoardLens = "all" | "cash" | "gpp";
+
+/** Double-Up style floor: chalk OK, starters, spend. */
+export function cashScore(p: Player): number {
+  const own = (p.ownership ?? 12) / 100;
+  const starter = p.isStarter === false ? 0.5 : 1;
+  const dart = p.cheapImpact ? 0.68 : 1;
+  const salary = p.salary >= 6000 ? 1.1 : p.salary < 4000 ? 0.72 : 1;
+  return p.projection * (1 + own * 0.32) * starter * dart * salary;
+}
+
+/** Milly leverage: fade modeled chalk, keep studs in the mix. */
+export function gppScore(p: Player): number {
+  const own = (p.ownership ?? 12) / 100;
+  const lev = Math.max(0.55, 1.18 - own * 0.75);
+  const it = p.itFactor ? 1.22 : 1;
+  const dart = p.cheapImpact ? 1.18 : 1;
+  const stud = p.projection >= 18 ? 1.08 : 1;
+  return Math.max(p.projection, 3.5) * Math.max(p.value, 0.8) * lev * it * dart * stud;
+}
+
+export function isCashPlay(p: Player): boolean {
+  if (isSidelined(p.injury, p.status)) return false;
+  if (p.isStarter === false) return false;
+  if (p.projection < 7.5) return false;
+  if (p.cheapImpact && p.projection < 11) return false;
+  return true;
+}
+
+export function isGppPlay(p: Player): boolean {
+  if (isSidelined(p.injury, p.status)) return false;
+  if (p.itFactor || p.cheapImpact) return true;
+  if (p.isValuePlay && (p.ownership ?? 20) <= 16) return true;
+  if ((p.ownership ?? 99) <= 10 && p.projection >= 8) return true;
+  if (p.projection >= 16) return true;
+  return false;
 }

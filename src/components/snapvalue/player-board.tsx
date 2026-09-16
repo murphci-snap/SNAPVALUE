@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { POSITIONS } from "@/lib/dfs/constants";
 import { kickoffLabel, matchupLabel, matchupTone, propLineItems, rankingLabel, seasonLine, weekLine } from "@/lib/dfs/format-ui";
-import { isSidelined } from "@/lib/dfs/scoring";
+import { cashScore, gppScore, isCashPlay, isGppPlay, isSidelined, type BoardLens } from "@/lib/dfs/scoring";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary } from "@/lib/utils";
 import { CheapImpactRack } from "./cheap-impact-rack";
@@ -33,6 +33,7 @@ export function PlayerBoard({
   const [dir, setDir] = useState<"desc" | "asc">("desc");
   const [valuesOnly, setValuesOnly] = useState(false);
   const [itOnly, setItOnly] = useState(false);
+  const [lens, setLens] = useState<BoardLens>("all");
   const [selected, setSelected] = useState<Player | null>(null);
   const [tableReady, setTableReady] = useState(false);
   useEffect(() => setTableReady(true), []);
@@ -52,6 +53,8 @@ export function PlayerBoard({
     if (pos !== "ALL") list = list.filter((p) => p.position === pos);
     if (valuesOnly) list = list.filter((p) => p.isValuePlay);
     if (itOnly) list = list.filter((p) => p.itFactor);
+    if (lens === "cash") list = list.filter((p) => isCashPlay(p));
+    if (lens === "gpp") list = list.filter((p) => isGppPlay(p));
     if (query) {
       list = list.filter(
         (p) =>
@@ -69,9 +72,11 @@ export function PlayerBoard({
       }
       if (sort === "name") return mul * a.name.localeCompare(b.name);
       if (sort === "ownership") return mul * ((a.ownership ?? 0) - (b.ownership ?? 0));
+      if (lens === "cash" && sort === "projection") return mul * (cashScore(a) - cashScore(b));
+      if (lens === "gpp" && sort === "projection") return mul * (gppScore(a) - gppScore(b));
       return mul * ((a[sort] as number) - (b[sort] as number));
     });
-  }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly]);
+  }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly, lens]);
 
   const valueRackPos = pos === "ALL" ? posList : [pos];
   const rack = useMemo(
@@ -80,10 +85,15 @@ export function PlayerBoard({
         pos: p,
         players: [...boardPlayers]
           .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false && !isSidelined(x.injury, x.status))
-          .sort((a, b) => b.value - a.value || a.valueRank - b.valueRank)
+          .filter((x) => (lens === "cash" ? isCashPlay(x) : lens === "gpp" ? isGppPlay(x) || x.projection >= 14 : true))
+          .sort((a, b) => {
+            if (lens === "cash") return cashScore(b) - cashScore(a) || b.value - a.value;
+            if (lens === "gpp") return gppScore(b) - gppScore(a) || b.value - a.value;
+            return b.value - a.value || a.valueRank - b.valueRank;
+          })
           .slice(0, 4),
       })),
-    [boardPlayers, pos, posList],
+    [boardPlayers, pos, posList, lens],
   );
 
   function toggleSort(key: SortKey) {
@@ -143,7 +153,35 @@ export function PlayerBoard({
         >
           IT Factor
         </Button>
+        <div className="flex rounded-full bg-secondary p-1 shadow-[var(--shadow-border)]">
+          {(["all", "cash", "gpp"] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setLens(id);
+                if (id !== "all") {
+                  setSort("projection");
+                  setDir("desc");
+                }
+              }}
+              className={cn(
+                "h-9 rounded-full px-3 text-sm font-medium transition-colors duration-150",
+                lens === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {id === "all" ? "All" : id === "cash" ? "Cash" : "GPP"}
+            </button>
+          ))}
+        </div>
       </div>
+      {lens !== "all" && (
+        <p className="text-muted-foreground -mt-1 text-sm">
+          {lens === "cash"
+            ? "Cash lens · Double Up floors. Chalk is fine. Sorted by floor, not leverage."
+            : "GPP lens · Milly leverage. Lower Own%, IT, unique value. Studs stay in the mix."}
+        </p>
+      )}
 
       <ItFactorRack data={data} pos={pos} onSelect={setSelected} />
       <CheapImpactRack data={data} pos={pos} onSelect={setSelected} />
@@ -151,7 +189,9 @@ export function PlayerBoard({
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-2">
           <h2 className="display text-xl font-semibold">Best value</h2>
-          <p className="text-value text-[11px] tracking-wide uppercase">Sorted by pts / $1k</p>
+          <p className="text-value text-[11px] tracking-wide uppercase">
+            {lens === "cash" ? "Cash · floor first" : lens === "gpp" ? "GPP · leverage" : "Sorted by pts / $1k"}
+          </p>
         </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {rack.map((group) => (
@@ -258,6 +298,8 @@ export function PlayerBoard({
                             {p.itFactor && <Badge variant="it">IT</Badge>}
                             {p.cheapImpact && <Badge variant="value">Bargain</Badge>}
                             {p.isValuePlay && <Badge variant="value">Value</Badge>}
+                            {lens !== "gpp" && isCashPlay(p) && <Badge variant="hot">Cash</Badge>}
+                            {lens !== "cash" && isGppPlay(p) && <Badge variant="it">GPP</Badge>}
                             {p.rankingMethod === "props" && <Badge variant="hot">Vegas</Badge>}
                             {p.injury && <Badge variant="warn">{p.injury}</Badge>}
                           </div>

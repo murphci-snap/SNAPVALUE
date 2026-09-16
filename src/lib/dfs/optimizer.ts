@@ -17,7 +17,7 @@ export const CONTEST_META: Record<
   },
   milly: {
     label: "Milly Maker",
-    blurb: "Huge GPP. Ceiling, stacks, and unique darts. Fine to leave a little salary if the smash is real.",
+    blurb: "Huge GPP. Ceiling, stacks, bring-backs, unique darts. Fine to leave a little salary if the smash is real.",
   },
   small: {
     label: "≤30 entries",
@@ -25,7 +25,7 @@ export const CONTEST_META: Record<
   },
   doubleup: {
     label: "Double Up",
-    blurb: "Cash / 50-50. High floors, chalk, spend the cap. Almost no bargain darts or stacks.",
+    blurb: "Cash / 50-50. High floors, chalk, spend the cap. Stacks almost off.",
   },
 };
 
@@ -179,8 +179,9 @@ function buildOne(
   });
 
   let qb: Player | null = null;
-  const stackWr = contest === "milly" ? 0.86 : contest === "doubleup" ? 0.18 : contest === "small" ? 0.42 : 0.7;
-  const stackFlex = contest === "milly" ? 0.48 : contest === "doubleup" ? 0.04 : contest === "small" ? 0.12 : 0.32;
+  const stackWr = contest === "milly" ? 0.92 : contest === "doubleup" ? 0.06 : contest === "small" ? 0.28 : 0.62;
+  const stackFlex = contest === "milly" ? 0.55 : contest === "doubleup" ? 0 : contest === "small" ? 0.08 : 0.22;
+  const bringBack = contest === "milly" ? 0.38 : contest === "single" ? 0.14 : 0;
 
   for (let i = 0; i < fillOrder.length; i++) {
     const slot = fillOrder[i]!;
@@ -216,9 +217,9 @@ function buildOne(
         const stack = candidates.filter((p) => p.team === qb!.team && p.position !== "RB");
         const rate = slot.slot === "FLEX" ? stackFlex : stackWr;
         if (stack.length && rng() < rate) candidates = stack;
-        else if (contest === "milly" && qb && rng() < 0.22) {
-          const bringBack = candidates.filter((p) => p.opponent === qb!.team && p.position !== "QB");
-          if (bringBack.length) candidates = bringBack;
+        else if (bringBack && qb && rng() < bringBack) {
+          const back = candidates.filter((p) => p.opponent === qb!.team && p.position !== "QB");
+          if (back.length) candidates = back;
         }
       }
 
@@ -350,8 +351,9 @@ export function generateShowdownLineups(
     else {
       const chalk = contest === "doubleup";
       cpt = weightedPick(cptPool, (p) => {
-        const floor = p.salary >= 9000 ? 1.2 : 1;
-        return chalk ? p.projection ** 2.1 * floor : p.projection ** 1.35 * (p.itFactor ? 1.2 : 1) * (0.6 + rng());
+        const own = (p.ownership ?? 12) / 100;
+        if (chalk) return p.projection ** 2.15 * (p.salary >= 9000 ? 1.22 : 1);
+        return p.projection ** 1.28 * (p.itFactor ? 1.28 : 1) * Math.max(0.62, 1.2 - own * 0.7) * (0.55 + rng() * 0.7);
       }, rng);
     }
     if (!cpt) continue;
@@ -377,7 +379,13 @@ export function generateShowdownLineups(
         const candidates = utilPool.filter((p) => !usedCore.has(coreId(p)) && leftoverAfterMin(p) >= 0);
         pick = weightedPick(
           candidates,
-          (p) => scorePlayer(contest === "milly" ? "milly" : "doubleup", p, rng, false),
+          (p) => {
+            const base = scorePlayer(contest === "milly" ? "milly" : "doubleup", p, rng, false);
+            if (contest !== "milly" || !cpt) return base;
+            if (p.team === cpt.team) return base * 1.45;
+            if (p.opponent === cpt.team) return base * 1.18;
+            return base;
+          },
           rng,
         );
       }
