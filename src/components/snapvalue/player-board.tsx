@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { POSITIONS } from "@/lib/dfs/constants";
 import { kickoffLabel, matchupLabel, matchupTone, propLineItems, rankingLabel, seasonLine, weekLine } from "@/lib/dfs/format-ui";
+import { itIdSet, itWhy } from "@/lib/dfs/it-factor";
 import { cashScore, gppScore, isCashPlay, isGppPlay, isSidelined, type BoardLens } from "@/lib/dfs/scoring";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary } from "@/lib/utils";
@@ -46,13 +47,17 @@ export function PlayerBoard({
     () => (boardPlayers.some((p) => p.position === "K") ? [...POSITIONS, "K"] : [...POSITIONS]),
     [boardPlayers],
   );
+  const itIds = useMemo(
+    () => itIdSet(boardPlayers, data.games, lens),
+    [boardPlayers, data.games, lens],
+  );
   const POS_FILTER: Array<Position | "ALL"> = ["ALL", ...posList];
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     let list = boardPlayers;
     if (pos !== "ALL") list = list.filter((p) => p.position === pos);
     if (valuesOnly) list = list.filter((p) => p.isValuePlay);
-    if (itOnly) list = list.filter((p) => p.itFactor);
+    if (itOnly) list = list.filter((p) => itIds.has(p.id));
     if (lens === "cash") list = list.filter((p) => isCashPlay(p));
     if (lens === "gpp") list = list.filter((p) => isGppPlay(p));
     if (query) {
@@ -76,7 +81,7 @@ export function PlayerBoard({
       if (lens === "gpp" && sort === "projection") return mul * (gppScore(a) - gppScore(b));
       return mul * ((a[sort] as number) - (b[sort] as number));
     });
-  }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly, lens]);
+  }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly, lens, itIds]);
 
   const valueRackPos = pos === "ALL" ? posList : [pos];
   const rack = useMemo(
@@ -191,7 +196,7 @@ export function PlayerBoard({
             ? "Cash · Double Up floors. Chalk is fine. Best Value sorts by floor."
             : "GPP · Milly leverage. Lower Own%, IT, unique value. Studs stay."}
         </p>
-      )}      <ItFactorRack data={data} pos={pos} onSelect={setSelected} />
+      )}      <ItFactorRack data={data} pos={pos} lens={lens} onSelect={setSelected} />
       <CheapImpactRack data={data} pos={pos} onSelect={setSelected} />
 
       <section>
@@ -292,7 +297,7 @@ export function PlayerBoard({
                     className={cn(
                       "border-border/70 hover:bg-accent/60 cursor-pointer border-t transition-colors duration-150",
                       p.isValuePlay && "bg-value/5",
-                      p.itFactor && !p.isValuePlay && "bg-ink/5",
+                      itIds.has(p.id) && !p.isValuePlay && "bg-ink/5",
                       excluded && "opacity-40",
                     )}
                     onClick={() => setSelected(p)}
@@ -303,7 +308,7 @@ export function PlayerBoard({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="truncate font-medium">{p.name}</span>
-                            {p.itFactor && <Badge variant="it">IT</Badge>}
+                            {itIds.has(p.id) && <Badge variant="it">IT</Badge>}
                             {p.cheapImpact && <Badge variant="value">Bargain</Badge>}
                             {p.isValuePlay && <Badge variant="value">Value</Badge>}
                             {lens !== "gpp" && isCashPlay(p) && <Badge variant="hot">Cash</Badge>}
@@ -377,6 +382,8 @@ export function PlayerBoard({
           locked={locks.includes(selected.id)}
           onClose={() => setSelected(null)}
           onLock={() => onToggleLock(selected.id)}
+          it={itIds.has(selected.id)}
+          why={itWhy(selected, data.games, lens)}
         />
       )}
     </div>
@@ -447,11 +454,15 @@ function PlayerDetail({
   locked,
   onClose,
   onLock,
+  it,
+  why,
 }: {
   player: Player;
   locked: boolean;
   onClose: () => void;
   onLock: () => void;
+  it: boolean;
+  why: string;
 }) {
   const d = player.defense;
   return (
@@ -490,10 +501,10 @@ function PlayerDetail({
           ))}
         </dl>
 
-        {player.itFactor && player.itFactorWhy && (
+        {it && why && (
           <p className="text-ink mt-4 text-sm">
             <span className="display tracking-[0.14em] uppercase">IT Factor · </span>
-            {player.itFactorWhy}
+            {why}
           </p>
         )}
         {player.cheapImpact && player.cheapImpactWhy && (

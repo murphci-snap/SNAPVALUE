@@ -24,7 +24,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 32;
+const CACHE_VER = 33;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -813,9 +813,9 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       }
     }
 
+    markOwnership(players);
     markItFactor(players, games);
     markCheapImpact(players);
-    markOwnership(players);
     players.sort((a, b) => b.projection - a.projection || b.salary - a.salary);
 
     const trimmed = players.filter((p) => {

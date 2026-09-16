@@ -17,7 +17,6 @@ export function markOwnership(players: Player[]) {
     const raw = group.map((p) => {
       if (isSidelined(p.injury, p.status) || p.projection <= 0) return 0.02;
       let s = Math.pow(Math.max(1.2, p.projection), 1.48) * Math.pow(Math.max(2.5, p.salary / 1000), 0.32);
-      if (p.itFactor) s *= 1.2;
       if (p.isValuePlay) s *= 1.08;
       if (p.salary >= 8000) s *= 1.1;
       if (p.cheapImpact) s *= 0.92;
