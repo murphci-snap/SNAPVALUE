@@ -29,14 +29,14 @@ function median(vals: number[]): number {
   return a.length % 2 ? a[m]! : (a[m - 1]! + a[m]!) / 2;
 }
 
-function whyBits(p: Player, games: Game[], residual: number): string[] {
+function whyBits(p: Player, games: Game[], _residual: number): string[] {
   const bits: string[] = [];
   const g = games.find((x) => x.homeAbbr === p.team || x.awayAbbr === p.team);
   const imp = implied(p, games);
-  if (p.salary >= 5000 && p.salary <= 8000) bits.push(`$${(p.salary / 1000).toFixed(1)}k · our-guy band`);
+  if (p.salary >= 5000 && p.salary <= 8000) bits.push(`$${(p.salary / 1000).toFixed(1)}k · mid-priced smash`);
   const atdExp = expectedAtd(p);
   if (p.anytimeTd != null && p.anytimeTd >= atdExp + 0.06) {
-    bits.push(`${Math.round(p.anytimeTd * 100)}% ATD vs ${Math.round(atdExp * 100)}% salary-par`);
+    bits.push(`${Math.round(p.anytimeTd * 100)}% ATD vs typical for this salary`);
   }
   const script = scriptBump(p, games);
   if (script >= 1.2 && g?.total != null && g.total >= 47) bits.push(`${g.total.toFixed(1)} total`);
@@ -45,7 +45,7 @@ function whyBits(p: Player, games: Game[], residual: number): string[] {
   if (p.ownership != null && p.ownership <= 12) bits.push(`${p.ownership.toFixed(0)}% own`);
   if (p.fppg >= 6 && p.projection >= p.fppg + 4) bits.push("above season pace");
   if (p.value >= 2.5 && p.salary < 8000) bits.push(`${p.value.toFixed(2)} pts/$1k`);
-  if (!bits.length) bits.push(`smash residual ${residual >= 0 ? "+" : ""}${residual.toFixed(1)}`);
+  if (!bits.length) bits.push("Mid-salary smash spot — not just the expensive chalk");
   return bits.slice(0, 3);
 }
 
