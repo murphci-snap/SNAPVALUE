@@ -139,10 +139,15 @@ export function PlayerBoard({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant={lens === "cash" ? "value" : "secondary"}
-          size="sm"
-          onClick={() => {
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-9 items-center rounded-md px-3 text-xs font-medium transition-colors duration-150",
+            lens === "cash" ? "bg-value/15 text-value" : "bg-secondary text-secondary-foreground shadow-[var(--shadow-border)]",
+          )}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const next = lens === "cash" ? "all" : "cash";
             setLens(next);
             if (next !== "all") {
@@ -152,11 +157,16 @@ export function PlayerBoard({
           }}
         >
           Cash
-        </Button>
-        <Button
-          variant={lens === "gpp" ? "default" : "secondary"}
-          size="sm"
-          onClick={() => {
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-9 items-center rounded-md px-3 text-xs font-medium transition-colors duration-150",
+            lens === "gpp" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground shadow-[var(--shadow-border)]",
+          )}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const next = lens === "gpp" ? "all" : "gpp";
             setLens(next);
             if (next !== "all") {
@@ -166,21 +176,35 @@ export function PlayerBoard({
           }}
         >
           GPP
-        </Button>
-        <Button
-          variant={valuesOnly ? "value" : "secondary"}
-          size="sm"
-          onClick={() => setValuesOnly((v) => !v)}
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-9 items-center rounded-md px-3 text-xs font-medium transition-colors duration-150",
+            valuesOnly ? "bg-value/15 text-value" : "bg-secondary text-secondary-foreground shadow-[var(--shadow-border)]",
+          )}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setValuesOnly((v) => !v);
+          }}
         >
           Best value only
-        </Button>
-        <Button
-          variant={itOnly ? "default" : "secondary"}
-          size="sm"
-          onClick={() => setItOnly((v) => !v)}
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-9 items-center rounded-md px-3 text-xs font-medium transition-colors duration-150",
+            itOnly ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground shadow-[var(--shadow-border)]",
+          )}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setItOnly((v) => !v);
+          }}
         >
           IT Factor
-        </Button>
+        </button>
         <div className="min-w-48 flex-1 basis-full sm:basis-auto">
           <Input
             value={q}

@@ -135,7 +135,11 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
             <button
               key={id}
               type="button"
-              onClick={() => setTab(id)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setTab(id);
+              }}
               className={cn(
                 "h-11 flex-1 rounded-md px-1 text-center text-xs font-medium leading-tight transition-colors duration-150 sm:text-sm",
                 tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground",

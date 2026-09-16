@@ -9,5 +9,15 @@
       "path": "/api/slate",
       "schedule": "0 16 * * *"
     }
+  ],
+  "rewrites": [
+    { "source": "/Players", "destination": "/" },
+    { "source": "/Players/", "destination": "/" },
+    { "source": "/Lineups", "destination": "/" },
+    { "source": "/Lineups/", "destination": "/" },
+    { "source": "/Bets", "destination": "/" },
+    { "source": "/Cash", "destination": "/" },
+    { "source": "/GPP", "destination": "/" },
+    { "source": "/PPR", "destination": "/" }
   ]
 }
