@@ -118,6 +118,31 @@ export function smashScore(p: Player, games: Game[], lens: BoardLens = "all"): n
   return s;
 }
 
+/** Matchup / ATD residual for weekly full-PPR. No salary, Val, or Cash/GPP lens. */
+export function smashScoreWeeklyPpr(p: Player, games: Game[], ppr: number): number {
+  if (isSidelined(p.injury, p.status)) return -99;
+  let s = scriptBump(p, games);
+  if (p.oppRank >= 28) s += 1.85;
+  else if (p.oppRank >= 24) s += 1.2;
+  else if (p.oppRank >= 20) s += 0.5;
+  else if (p.oppRank <= 6) s -= 1.9;
+  else if (p.oppRank <= 10) s -= 0.9;
+
+  const par =
+    p.position === "QB" ? 0.36 : p.position === "RB" ? 0.4 : p.position === "WR" ? 0.3 : p.position === "TE" ? 0.26 : 0.2;
+  const propsInProj = p.rankingMethod === "props";
+  if (p.anytimeTd != null && p.anytimeTd > 0) {
+    s += clamp(p.anytimeTd - par, -0.16, 0.28) * (propsInProj ? 5 : 12);
+  }
+  if ((p.position === "WR" || p.position === "TE") && p.props?.receptions) {
+    const exp = p.position === "TE" ? 4.2 : 5.4;
+    s += clamp((p.props.receptions - exp) / 2.4, -0.4, 1.1);
+  }
+  if (p.fppg >= 6) s += clamp((ppr - p.fppg) / 7, -0.5, 1.3);
+  if (ppr >= 18) s += 0.4;
+  return s;
+}
+
 export function pickItFactor(players: Player[], games: Game[], pos: Position, lens: BoardLens = "all"): Player[] {
   const floor = pos === "DST" ? 4 : pos === "QB" ? 12 : 7;
   const pool = players.filter((p) => {
