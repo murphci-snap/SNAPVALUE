@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { buildWeeklyDesk, type DeskBet } from "@/lib/dfs/desk";
-import { ledgerSummary, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
+import { deskTighten, ledgerSummary, loadLedger, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
 import { formatAmerican, formatPct } from "@/lib/dfs/markets";
 import type { Game, Player } from "@/lib/dfs/types";
 
@@ -71,9 +71,16 @@ export function BetDesk({
   week: number;
   season: number;
 }) {
-  const desk = useMemo(() => buildWeeklyDesk(games, players), [games, players]);
+  const [history, setHistory] = useState<GradedBet[]>([]);
   const [ledger, setLedger] = useState<GradedBet[]>([]);
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setHistory(loadLedger());
+  }, []);
+
+  const tighten = useMemo(() => deskTighten(history), [history]);
+  const desk = useMemo(() => buildWeeklyDesk(games, players, tighten), [games, players, tighten]);
 
   useEffect(() => {
     setLedger(settleDesk({ desk, games, players, week, season }));
@@ -114,6 +121,9 @@ export function BetDesk({
         ) : (
           <p className="text-muted-foreground mt-2 text-xs">Grades when games are final. Nothing settled yet.</p>
         )}
+        {desk.tightenNotes.length ? (
+          <p className="text-ink mt-2 text-xs">{desk.tightenNotes.join(" · ")}</p>
+        ) : null}
         {rec.weekRows.length ? (
           <button
             type="button"
@@ -174,14 +184,14 @@ export function BetDesk({
       </section>
 
       <section>
-        <h2 className="display text-2xl font-semibold">Three best bets</h2>
+        <h2 className="display text-2xl font-semibold">Best bets</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Real edges only — no forced under. Empty slot beats a fake 1u pick. Do not parlay all three.
+          0–2 cards that clear a higher edge bar. Empty is better than a forced pick. Do not parlay them.
         </p>
         {desk.bestBets.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Waiting on this week’s spreads and totals.</p>
+          <p className="text-muted-foreground text-sm">No spread or total clearing the bar on remaining games.</p>
         ) : (
-          <ol className="grid gap-3 md:grid-cols-3">
+          <ol className="grid gap-3 md:grid-cols-2">
             {desk.bestBets.map((bet, i) => (
               <BetCard key={bet.id} bet={bet} kicker={`${String(i + 1).padStart(2, "0")} · ${bet.market}`} />
             ))}
@@ -218,10 +228,10 @@ export function BetDesk({
       <section>
         <h2 className="display text-2xl font-semibold">Player props</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          One over/under each: QB passing yards, RB rushing, RB receiving, WR receiving, TE receiving. Half unit.
+          Yard props only with ≥2 books and a real gap vs an independent pace number. Empty slot if one book or no edge.
         </p>
         {desk.playerProps.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Waiting on yardage props for this slate.</p>
+          <p className="text-muted-foreground text-sm">No two-book yard props clearing the bar.</p>
         ) : (
           <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {desk.playerProps.map((bet) => (
@@ -279,7 +289,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">Need 2 priced anytime-TD names on separate remaining games.</p>
+          <p className="text-muted-foreground text-sm">Need 2 mid-board priced ATDs with a real edge, separate remaining games.</p>
         )}
       </section>
 
@@ -317,7 +327,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay3.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">Need 3 priced anytime-TD names on separate remaining games.</p>
+          <p className="text-muted-foreground text-sm">Need 3 strong priced ATDs on separate remaining games. Hidden when the board is thin.</p>
         )}
       </section>
 
@@ -396,7 +406,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.lottoTicket.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">Need 5 priced anytime-TD names on separate remaining games.</p>
+          <p className="text-muted-foreground text-sm">Need 5 mid-priced ATDs on separate remaining games. Default empty when the board is thin.</p>
         )}
       </section>
     </div>

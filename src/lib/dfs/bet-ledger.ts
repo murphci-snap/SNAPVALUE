@@ -1,5 +1,6 @@
 import { gamePhase } from "./markets";
-import type { DeskBet, TdParlay, WeeklyDesk } from "./desk";
+import type { DeskBet, DeskTighten, TdParlay, WeeklyDesk } from "./desk";
+import { NO_TIGHTEN } from "./desk";
 import type { Game, Player } from "./types";
 
 export type GradeResult = "win" | "loss" | "push" | "void";
@@ -145,6 +146,62 @@ function pnlOf(result: GradeResult, unit: number): number {
   if (result === "win") return unit;
   if (result === "loss") return -unit;
   return 0;
+}
+
+export function loadLedger(): GradedBet[] {
+  return readStore().bets;
+}
+
+/** Raise floors on cold markets. Ignore until ≥5 graded decisions. */
+export function deskTighten(bets: GradedBet[]): DeskTighten {
+  const decided = bets.filter((b) => b.result === "win" || b.result === "loss");
+  const out: DeskTighten = { ...NO_TIGHTEN, notes: [] };
+  const of = (m: string) => decided.filter((b) => b.market === m);
+  const cold = (rows: GradedBet[]) => {
+    if (rows.length < 5) return false;
+    const units = rows.reduce((s, b) => s + b.pnl, 0);
+    const w = rows.filter((b) => b.result === "win").length;
+    const hit = w / rows.length;
+    return units < -0.4 || hit < 0.4;
+  };
+  const spread = of("spread");
+  if (cold(spread)) {
+    out.atsAdd = 0.025;
+    out.notes.push("Spreads tightened from track record");
+  }
+  const totals = of("total");
+  if (totals.length >= 5) {
+    const overs = totals.filter((b) => /^over/i.test(b.pick));
+    const unders = totals.filter((b) => /^under/i.test(b.pick));
+    if (overs.length >= 4 && cold(overs)) {
+      out.overAdd = 0.6;
+      out.notes.push("Overs tightened from track record");
+    }
+    if (unders.length >= 4 && cold(unders)) {
+      out.underAdd = 0.4;
+      out.notes.push("Unders tightened from track record");
+    }
+    if (!out.overAdd && !out.underAdd && cold(totals)) {
+      out.overAdd = 0.4;
+      out.underAdd = 0.3;
+      out.notes.push("Totals tightened from track record");
+    }
+  }
+  if (cold(of("prop"))) {
+    out.propAdd = 0.025;
+    out.notes.push("Props tightened from track record");
+  }
+  const atd = [...of("atd"), ...of("atd3")];
+  if (cold(atd)) {
+    out.atdMinEdge = 0.08;
+    out.hideAtd3 = true;
+    out.notes.push("ATD parlays tightened from track record");
+  }
+  if (cold(of("lotto"))) {
+    out.hideLotto = true;
+    out.notes.push("Lotto hidden from track record");
+  }
+  return out;
 }
 
 export function settleDesk(opts: {

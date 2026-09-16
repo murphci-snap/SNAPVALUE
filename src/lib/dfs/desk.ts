@@ -58,7 +58,30 @@ export interface WeeklyDesk {
   lottoTicket: TdParlay | null;
   sources: string[];
   remainingOnly: boolean;
+  tightenNotes: string[];
 }
+
+export interface DeskTighten {
+  atsAdd: number;
+  overAdd: number;
+  underAdd: number;
+  propAdd: number;
+  atdMinEdge: number;
+  hideAtd3: boolean;
+  hideLotto: boolean;
+  notes: string[];
+}
+
+export const NO_TIGHTEN: DeskTighten = {
+  atsAdd: 0,
+  overAdd: 0,
+  underAdd: 0,
+  propAdd: 0,
+  atdMinEdge: 0.05,
+  hideAtd3: false,
+  hideLotto: false,
+  notes: [],
+};
 
 function playerAtd(p: Player): number {
   if (p.anytimeTd != null && p.anytimeTd > 0 && p.anytimeTd < 1) return p.anytimeTd;
@@ -166,10 +189,10 @@ function atsUnit(edge: number): string {
   return "0.25u";
 }
 
-const ATS_FLOOR = 0.065;
-const ML_FLOOR = 0.05;
+const ATS_FLOOR = 0.085;
+const ML_FLOOR = 0.07;
 
-function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge: number; why: string } | null {
+function scoreAts(game: Game, players: Player[], floor: number): { side: "home" | "away"; edge: number; why: string } | null {
   if (game.spread == null) return null;
   const homeP = teamWinProb(game, game.homeAbbr) ?? 0.5;
   const homeTd = impliedTdShare(players, game.homeAbbr);
@@ -208,8 +231,8 @@ function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge:
 
   const side: "home" | "away" = homeEdge >= 0 ? "home" : "away";
   const edge = Math.abs(homeEdge) + Math.abs(homeP - 0.5) * 0.08;
-  if (edge < ATS_FLOOR) return null;
-  if (bits.length <= 1 && bits[0]?.includes("home dog") && edge < 0.08) return null;
+  if (edge < floor) return null;
+  if (bits.length <= 1 && bits[0]?.includes("home dog") && edge < floor + 0.02) return null;
   const team = side === "home" ? game.homeAbbr : game.awayAbbr;
   const spread = side === "home" ? game.spread : -game.spread;
   const why =
@@ -218,22 +241,27 @@ function scoreAts(game: Game, players: Player[]): { side: "home" | "away"; edge:
   return { side, edge, why: `${why}. Cover number ${formatSpread(spread)}. ` };
 }
 
-function scoreTotal(game: Game, players: Player[]): { pick: "over" | "under"; edge: number; why: string; expected: number } | null {
+function scoreTotal(
+  game: Game,
+  players: Player[],
+  overAdd: number,
+  underAdd: number,
+): { pick: "over" | "under"; edge: number; why: string; expected: number } | null {
   if (game.total == null) return null;
   const posted = game.total;
   const { expected, market, tdNote } = expectedTotal(game, players);
   const gap = expected - posted;
-  const overGate = 2.0;
-  const underGate = 1.5;
+  const overGate = 2.4 + overAdd;
+  const underGate = 1.9 + underAdd;
   if (gap >= overGate) {
     const edge = Math.min(0.12, gap / 16);
-    if (edge < 0.07) return null;
+    if (edge < 0.085) return null;
     const why = `Implied total ${market?.toFixed(1) ?? "n/a"} vs posted ${posted}. Model ${expected.toFixed(1)}.${game.isDome ? " Dome." : ""}${tdNote ? ` ${tdNote}` : ""}`;
     return { pick: "over", edge, why, expected };
   }
   if (gap <= -underGate) {
     const edge = Math.min(0.12, Math.abs(gap) / 16);
-    if (edge < 0.07) return null;
+    if (edge < 0.085) return null;
     const wx = weatherUnderBias(game);
     const why = `Posted ${posted} sits above implied ${market?.toFixed(1) ?? expected.toFixed(1)}. Model ${expected.toFixed(1)}${wx ? " after outdoor weather" : ""}.${tdNote ? ` ${tdNote}` : ""}`;
     return { pick: "under", edge, why, expected };
@@ -280,18 +308,20 @@ function propCard(
   line: number,
   kind: "pass" | "rush" | "rec",
   games: Game[],
+  propAdd: number,
 ): DeskBet | null {
   if (line < 12) return null;
+  if (bookCount(p) < 2) return null;
   const model = independentYards(p, kind, games);
   if (model == null) return null;
   const gap = model - line;
   const over = gap > 0;
   const rel = Math.abs(gap) / line;
-  if (over && (rel < 0.05 || Math.abs(gap) < 8)) return null;
-  if (!over && (rel < 0.045 || Math.abs(gap) < 6)) return null;
+  if (over && (rel < 0.06 || Math.abs(gap) < 10)) return null;
+  if (!over && (rel < 0.055 || Math.abs(gap) < 8)) return null;
   const edge = Math.min(0.16, Math.abs(gap) / Math.max(40, line));
-  if (over && edge < 0.09) return null;
-  if (!over && edge < 0.07) return null;
+  if (over && edge < 0.11 + propAdd) return null;
+  if (!over && edge < 0.09 + propAdd) return null;
   const label = kind === "pass" ? "pass yds" : kind === "rush" ? "rush yds" : "rec yds";
   const g = gameOf(p, games);
   const bookList = p.props?.books?.length ? p.props.books : [];
@@ -323,21 +353,21 @@ function bestProp(
   pos: Player["position"],
   kind: "pass" | "rush" | "rec",
   getter: (p: Player) => number | undefined,
+  propAdd: number,
 ): DeskBet | null {
   const eligible = players.filter((p) => {
     if (p.position !== pos) return false;
     if (p.isStarter === false) return false;
     if (isSidelined(p.injury, p.status)) return false;
+    if (bookCount(p) < 2) return false;
     const line = getter(p);
     return line != null && line > 0;
   });
-  const multi = eligible.filter((p) => bookCount(p) >= 2);
-  const pool = multi.length ? multi : eligible.filter((p) => bookCount(p) >= 1);
   const rows: DeskBet[] = [];
-  for (const p of pool) {
+  for (const p of eligible) {
     const line = getter(p);
     if (line == null) continue;
-    const card = propCard(p, line, kind, games);
+    const card = propCard(p, line, kind, games, propAdd);
     if (card) rows.push(card);
   }
   rows.sort((a, b) => b.edge - a.edge);
@@ -403,7 +433,7 @@ function gameOfPlayer(p: Player, games: Game[]): Game | undefined {
   return games.find((g) => g.homeAbbr === p.team || g.awayAbbr === p.team);
 }
 
-export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
+export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskTighten = NO_TIGHTEN): WeeklyDesk {
   const live = games.filter((g) => isUpcoming(g));
   const remainingOnly = games.some((g) => !isUpcoming(g));
   const liveTeams = new Set(live.flatMap((g) => [g.homeAbbr, g.awayAbbr]));
@@ -421,7 +451,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   const totals: DeskBet[] = [];
 
   for (const g of live) {
-    const a = scoreAts(g, board);
+    const a = scoreAts(g, board, ATS_FLOOR + tighten.atsAdd);
     if (a) {
       const team = a.side === "home" ? g.homeAbbr : g.awayAbbr;
       const spread = a.side === "home" ? g.spread! : -g.spread!;
@@ -444,7 +474,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         unit: atsUnit(a.edge),
       });
     }
-    const t = scoreTotal(g, board);
+    const t = scoreTotal(g, board, tighten.overAdd, tighten.underAdd);
     if (t && g.total != null) {
       const gap = t.expected - g.total;
       totals.push({
@@ -468,15 +498,15 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   ats.sort((a, b) => b.edge - a.edge);
   totals.sort((a, b) => b.edge - a.edge);
 
-  const spreadLock = ats[0] ?? null;
-  const bestBets = [...ats, ...totals].sort((a, b) => b.edge - a.edge).slice(0, 3);
+  const spreadLock = ats[0] && ats[0].edge >= ATS_FLOOR + tighten.atsAdd ? ats[0] : null;
+  const bestBets = [...ats, ...totals].sort((a, b) => b.edge - a.edge).slice(0, 2);
 
   const playerProps = [
-    bestProp(board, live, "QB", "pass", (p) => p.props?.passYds),
-    bestProp(board, live, "RB", "rush", (p) => p.props?.rushYds),
-    bestProp(board, live, "RB", "rec", (p) => p.props?.recYds),
-    bestProp(board, live, "WR", "rec", (p) => p.props?.recYds),
-    bestProp(board, live, "TE", "rec", (p) => p.props?.recYds),
+    bestProp(board, live, "QB", "pass", (p) => p.props?.passYds, tighten.propAdd),
+    bestProp(board, live, "RB", "rush", (p) => p.props?.rushYds, tighten.propAdd),
+    bestProp(board, live, "RB", "rec", (p) => p.props?.recYds, tighten.propAdd),
+    bestProp(board, live, "WR", "rec", (p) => p.props?.recYds, tighten.propAdd),
+    bestProp(board, live, "TE", "rec", (p) => p.props?.recYds, tighten.propAdd),
   ].filter((x): x is DeskBet => !!x);
 
   const kickoffOk = (iso: string) => {
@@ -506,11 +536,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
 
   const scored = atdRows
     .filter((x) => {
+      if (x.posted <= 0) return false;
+      if (x.prob < 0.26 || x.prob > 0.44) return false;
+      if (x.edge < tighten.atdMinEdge) return false;
       if (x.prob >= 0.62 && x.edge < 0.05) return false;
-      return x.s > -0.1;
+      return x.s > -0.02;
     })
     .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
-  const postedBest = [...atdRows].sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
 
   function pairHaircut(a: Player, b: Player): number {
     const ga = gameOf(a, live);
@@ -540,9 +572,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return best;
   }
 
-  const pair = pickAtdPair(scored) ?? pickAtdPair(postedBest);
+  const pair = pickAtdPair(scored);
   let atdParlay: TdParlay | null = null;
-  if (pair) {
+  if (pair && pair[0].edge >= tighten.atdMinEdge && pair[1].edge >= tighten.atdMinEdge) {
     const [a, b] = pair;
     const h = pairHaircut(a.p, b.p);
     const combined = parlayProb([a.prob, b.prob]) * h;
@@ -603,9 +635,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return best;
   }
 
-  const triple = pickAtdTriple(scored, true) ?? pickAtdTriple(scored, false) ?? pickAtdTriple(postedBest, true) ?? pickAtdTriple(postedBest, false);
+  const strong3 = scored.filter((x) => x.edge >= tighten.atdMinEdge + 0.015 && x.prob >= 0.26 && x.prob <= 0.42);
+  const triple =
+    tighten.hideAtd3 || new Set(strong3.map((x) => x.p.gameName)).size < 3
+      ? null
+      : pickAtdTriple(strong3, true) ?? pickAtdTriple(strong3, false);
   let atdParlay3: TdParlay | null = null;
-  if (triple) {
+  if (triple && triple.length === 3 && triple.every((x) => x.edge >= tighten.atdMinEdge)) {
     const combined = parlayProb(triple.map((x) => x.prob));
     const edgeSum = triple.reduce((s, x) => s + x.edge, 0);
     const unit = edgeSum >= 0.12 ? "0.25u" : "0.1u";
@@ -751,15 +787,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   }
 
   const lottoN = 5;
-  const lottoMid = postedBest.filter((x) => x.prob >= 0.18 && x.prob <= 0.42);
-  const lottoWide = postedBest.filter((x) => x.prob >= 0.14 && x.prob <= 0.55);
-  let lottoPicked = pickLotto(lottoMid, lottoN);
-  if (lottoPicked.length < 5) lottoPicked = pickLotto(lottoWide, lottoN);
-  if (lottoPicked.length < 5) lottoPicked = pickLotto(postedBest, lottoN);
+  const lottoMid = atdRows.filter((x) => x.posted > 0 && x.prob >= 0.18 && x.prob <= 0.42);
+  const lottoPicked = tighten.hideLotto ? [] : pickLotto(lottoMid, lottoN);
 
   let lottoTicket: TdParlay | null = null;
   if (lottoPicked.length >= 5) {
     const combined = parlayProb(lottoPicked.map((x) => x.prob));
+    const unit = combined < 0.04 ? "0.05u" : "0.1u";
     lottoTicket = {
       legs: lottoPicked.map((x) => ({
         name: x.p.name,
@@ -771,9 +805,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Five independent games. Posted anytime-TD prices only. Long-shot — one miss kills it. 0.1u cap.",
-      tape: "Lotto: mid-price ATD names, no same-game stack. Empty until five priced games exist.",
-      unit: "0.1u",
+      why: "Five independent games. Posted mid-board anytime-TD only. Long-shot — one miss kills it.",
+      tape: `${unit} cap. Empty when the priced board is thin.`,
+      unit,
     };
   }
 
@@ -854,7 +888,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
   return {
     bestBets: bestBets
       .filter((b) => b.unit !== "0u")
-      .slice(0, 3)
+      .slice(0, 2)
       .map((b, i) => ({ ...b, confidence: clampConf(b.confidence, i), unit: b.unit || "0.25u" })),
     spreadLock,
     moneylineDog,
@@ -866,6 +900,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     lottoTicket,
     sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "SNAPVALUE model", "Public tape + X cappers"],
     remainingOnly,
+    tightenNotes: tighten.notes,
   };
 }
 
