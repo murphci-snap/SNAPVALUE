@@ -3,8 +3,6 @@ import type { Game, Player, Position } from "./types";
 import { ordinal } from "@/lib/utils";
 import { isSidelined, type BoardLens } from "./scoring";
 
-const RATE: Record<string, number> = { QB: 2.42, RB: 2.12, WR: 2.02, TE: 1.78, DST: 1.55, K: 1.4 };
-
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
@@ -13,10 +11,6 @@ function implied(player: Player, games: Game[]): number | null {
   const g = games.find((x) => x.homeAbbr === player.team || x.awayAbbr === player.team);
   if (!g) return null;
   return player.home ? g.homeImplied : g.awayImplied;
-}
-
-function expectedProj(p: Player): number {
-  return (p.salary / 1000) * (RATE[p.position] ?? 2);
 }
 
 function expectedAtd(p: Player): number {
@@ -39,77 +33,86 @@ function whyBits(p: Player, games: Game[], residual: number): string[] {
   const bits: string[] = [];
   const g = games.find((x) => x.homeAbbr === p.team || x.awayAbbr === p.team);
   const imp = implied(p, games);
-  const exp = expectedProj(p);
-  const vsPay = p.projection - exp;
-  if (p.salary >= 5000 && p.salary <= 8000) bits.push(`$${(p.salary / 1000).toFixed(1)}k smash tier`);
-  if (vsPay >= 2.5) bits.push(`+${vsPay.toFixed(1)} vs $${(p.salary / 1000).toFixed(1)}k pay`);
-  if (g?.total != null && g.total >= 48) bits.push(`${g.total.toFixed(1)} total`);
-  else if (imp != null && imp >= 26) bits.push(`${imp.toFixed(1)} implied pts`);
-  if (p.oppRank >= 24) bits.push(`${ordinal(p.oppRank)} vs ${p.position}`);
+  if (p.salary >= 5000 && p.salary <= 8000) bits.push(`$${(p.salary / 1000).toFixed(1)}k · our-guy band`);
   const atdExp = expectedAtd(p);
   if (p.anytimeTd != null && p.anytimeTd >= atdExp + 0.06) {
     bits.push(`${Math.round(p.anytimeTd * 100)}% ATD vs ${Math.round(atdExp * 100)}% salary-par`);
   }
-  if (p.ownership != null && p.ownership <= 11) bits.push(`${p.ownership.toFixed(0)}% own · leverage`);
-  if (p.projection >= p.fppg + 4 && p.fppg > 4) bits.push("above season pace");
-  if (p.value >= 2.5) bits.push(`${p.value.toFixed(2)} pts/$1k`);
-  if (!bits.length) bits.push(`residual ${residual >= 0 ? "+" : ""}${residual.toFixed(1)} vs salary tier`);
+  const script = scriptBump(p, games);
+  if (script >= 1.2 && g?.total != null && g.total >= 47) bits.push(`${g.total.toFixed(1)} total`);
+  else if (script >= 1.2 && imp != null && imp >= 25) bits.push(`${imp.toFixed(1)} implied pts`);
+  if (p.oppRank >= 24) bits.push(`${ordinal(p.oppRank)} vs ${p.position}`);
+  if (p.ownership != null && p.ownership <= 12) bits.push(`${p.ownership.toFixed(0)}% own`);
+  if (p.fppg >= 6 && p.projection >= p.fppg + 4) bits.push("above season pace");
+  if (p.value >= 2.5 && p.salary < 8000) bits.push(`${p.value.toFixed(2)} pts/$1k`);
+  if (!bits.length) bits.push(`smash residual ${residual >= 0 ? "+" : ""}${residual.toFixed(1)}`);
   return bits.slice(0, 3);
 }
 
-/** Smash residual vs salary-tier expectation. Not raw projection. */
-export function smashScore(p: Player, games: Game[], lens: BoardLens = "all"): number {
-  if (isSidelined(p.injury, p.status)) return -99;
-  const exp = expectedProj(p);
-  let s = p.projection - exp;
+function scriptBump(p: Player, games: Game[]): number {
   const g = games.find((x) => x.homeAbbr === p.team || x.awayAbbr === p.team);
   const imp = implied(p, games);
+  let impliedB = 0;
+  if (imp != null && imp >= 28) impliedB = 1.6;
+  else if (imp != null && imp >= 25) impliedB = 0.85;
+  let totalB = 0;
+  if (g?.total != null && g.total >= 50) totalB = 1.2;
+  else if (g?.total != null && g.total >= 47) totalB = 0.55;
+  return Math.max(impliedB, totalB);
+}
 
-  if (imp != null && imp >= 28) s += 1.6;
-  else if (imp != null && imp >= 25) s += 0.85;
-  if (g?.total != null && g.total >= 50) s += 1;
-  else if (g?.total != null && g.total >= 47) s += 0.5;
-  if (p.oppRank >= 28) s += 1.8;
-  else if (p.oppRank >= 24) s += 1.15;
+/** Bump-only smash juice. Not projection. */
+export function smashScore(p: Player, games: Game[], lens: BoardLens = "all"): number {
+  if (isSidelined(p.injury, p.status)) return -99;
+  let s = 0;
+  s += scriptBump(p, games);
+  if (p.oppRank >= 28) s += 1.85;
+  else if (p.oppRank >= 24) s += 1.2;
   else if (p.oppRank >= 20) s += 0.5;
-  else if (p.oppRank <= 6) s -= 1.8;
-  else if (p.oppRank <= 10) s -= 0.85;
+  else if (p.oppRank <= 6) s -= 1.9;
+  else if (p.oppRank <= 10) s -= 0.9;
 
-  const propW = p.rankingMethod === "props" ? 0.4 : 1;
-  if (p.anytimeTd != null && p.anytimeTd > 0) {
-    s += clamp(p.anytimeTd - expectedAtd(p), -0.16, 0.26) * 10 * propW;
+  const propsInProj = p.rankingMethod === "props";
+  if (!propsInProj) {
+    if (p.anytimeTd != null && p.anytimeTd > 0) {
+      s += clamp(p.anytimeTd - expectedAtd(p), -0.16, 0.28) * 12;
+    }
+    if (p.position === "QB" && p.props?.passYds) {
+      const expY = 175 + (p.salary / 1000 - 5) * 16;
+      s += clamp((p.props.passYds - expY) / 42, -0.5, 1.2);
+    }
+    if ((p.position === "WR" || p.position === "TE") && p.props?.recYds) {
+      const expY = 22 + (p.salary / 1000) * 8;
+      s += clamp((p.props.recYds - expY) / 26, -0.5, 1.2);
+    }
+    if ((p.position === "RB" || p.position === "QB") && p.props?.rushYds) {
+      const expY = p.position === "QB" ? 16 + (p.salary / 1000) * 2 : 18 + (p.salary / 1000) * 8.5;
+      s += clamp((p.props.rushYds - expY) / 22, -0.5, 1.2);
+    }
+  } else if (p.anytimeTd != null && p.anytimeTd > 0) {
+    s += clamp(p.anytimeTd - expectedAtd(p), 0, 0.22) * 4;
   }
-  if (p.position === "QB" && p.props?.passYds) {
-    const expY = 175 + (p.salary / 1000 - 5) * 16;
-    s += clamp((p.props.passYds - expY) / 42, -0.7, 1.3) * propW;
-  }
-  if ((p.position === "WR" || p.position === "TE") && p.props?.recYds) {
-    const expY = 22 + (p.salary / 1000) * 8;
-    s += clamp((p.props.recYds - expY) / 26, -0.6, 1.3) * propW;
-  }
-  if ((p.position === "RB" || p.position === "QB") && p.props?.rushYds) {
-    const expY = p.position === "QB" ? 16 + (p.salary / 1000) * 2 : 18 + (p.salary / 1000) * 8.5;
-    s += clamp((p.props.rushYds - expY) / 22, -0.6, 1.3) * propW;
-  }
-  if (p.fppg >= 6) s += clamp((p.projection - p.fppg) / 6, -0.7, 1.4);
-  if (p.value >= 2.6 && p.projection >= 9) s += 0.65;
+
+  if (p.fppg >= 6) s += clamp((p.projection - p.fppg) / 7, -0.5, 1.2);
+  if (p.value >= 2.7 && p.salary < 8200) s += 0.7;
 
   const own = p.ownership ?? 12;
+  const elite = s >= 4.2;
+  if (p.isValuePlay && p.cheapImpact && p.salary >= 7500 && !elite) s -= 1.4;
+
   if (lens === "gpp") {
-    if (p.salary >= 8500) s *= s >= 3.4 ? 0.86 : 0.5;
-    else if (p.salary >= 5000 && p.salary <= 8000) s *= 1.22;
-    if (own >= 22) s *= 0.66;
-    else if (own <= 11) s *= 1.18;
-    if (p.cheapImpact) s *= 1.06;
+    if (p.salary >= 8500) s *= elite ? 0.72 : 0.38;
+    else if (p.salary >= 5000 && p.salary <= 8000) s *= 1.28;
+    if (own >= 20) s *= 0.58;
+    else if (own <= 11) s *= 1.22;
   } else if (lens === "cash") {
-    s += Math.max(0, p.projection - 11) * 0.1;
-    if (own >= 16) s *= 1.08;
-    if (p.salary < 4500) s *= 0.68;
-    if (p.cheapImpact && p.projection < 12) s *= 0.7;
-  } else if (p.salary >= 8800) {
-    s *= 0.76;
-  } else if (p.salary >= 5000 && p.salary <= 8000) {
-    s *= 1.1;
+    s += Math.max(0, p.projection - 12) * 0.14;
+    if (own >= 15) s *= 1.06;
+    if (p.salary < 4500) s *= 0.62;
+    if (p.cheapImpact && p.projection < 12) s *= 0.65;
+  } else {
+    if (p.salary >= 8800) s *= elite ? 0.8 : 0.55;
+    else if (p.salary >= 5000 && p.salary <= 8000) s *= 1.16;
   }
 
   return s;
@@ -130,22 +133,23 @@ export function pickItFactor(players: Player[], games: Game[], pos: Position, le
   if (!ranked.length) return [];
   const vals = ranked.map((r) => r.s);
   const med = median(vals);
-  const hi = vals[Math.max(0, Math.floor(vals.length * 0.25))] ?? med;
-  const lo = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.75))] ?? med;
-  const spread = Math.max(0.9, hi - lo);
-  const bar = med + 0.38 * spread;
+  const hi = vals[Math.max(0, Math.floor(vals.length * 0.2))] ?? med;
+  const lo = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.7))] ?? med;
+  const spread = Math.max(0.85, hi - lo);
+  const bar = med + 0.55 * spread;
   const out: Player[] = [];
   for (let i = 0; i < ranked.length && out.length < 3; i++) {
     const row = ranked[i]!;
     const next = ranked[i + 1];
     const gap = row.s - (next?.s ?? row.s - 2);
     if (out.length === 0) {
-      if (row.s < bar && gap < 1.15) break;
+      if (row.s < bar && gap < 1.35) break;
       out.push(row.p);
       continue;
     }
-    if (row.s < bar && gap < 0.75) break;
-    if (row.s < ranked[0]!.s - 3.4) break;
+    if (row.s < bar) break;
+    if (gap < 0.85 && row.s < med + 0.85 * spread) break;
+    if (row.s < ranked[0]!.s - 2.6) break;
     out.push(row.p);
   }
   return out;
