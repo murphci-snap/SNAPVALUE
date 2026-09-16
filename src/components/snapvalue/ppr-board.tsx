@@ -6,9 +6,18 @@ import { cn, formatPts } from "@/lib/utils";
 
 export function PprBoard({ data }: { data: SlateData }) {
   const [group, setGroup] = useState<PprGroup>("FLEX");
-  const rows = useMemo(() => rankPpr(data.players, group), [data.players, group]);
+  const rows = useMemo(() => rankPpr(data.players, group, data.games), [data.players, data.games, group]);
   const shown = rows.slice(0, group === "FLEX" ? 48 : group === "QB" || group === "DST" ? 32 : 40);
   const week = data.week || 1;
+  const smashRack = useMemo(() => {
+    const posList = group === "FLEX" ? (["RB", "WR", "TE"] as const) : group === "DST" ? (["DST"] as const) : ([group] as const);
+    return posList
+      .map((pos) => ({
+        pos,
+        players: rows.filter((r) => r.smash && r.player.position === pos).slice(0, 3),
+      }))
+      .filter((g) => g.players.length);
+  }, [rows, group]);
 
   return (
     <section className="flex min-w-0 flex-col gap-4">
@@ -17,7 +26,8 @@ export function PprBoard({ data }: { data: SlateData }) {
         <h2 className="display text-2xl leading-none font-semibold">Weekly PPR ranks</h2>
         <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
           Regular weekly PPR for Week {week} only — not daily fantasy, not rest-of-season. Ranked by this week's
-          full-PPR points (props usage when posted, else CBS / FantasyPros). No salary, no Val.
+          full-PPR points (props usage when posted, else CBS / FantasyPros). Smash tags are ceiling weeks in PPR, not
+          DFS salary.
         </p>
       </header>
 
@@ -37,6 +47,35 @@ export function PprBoard({ data }: { data: SlateData }) {
         ))}
       </div>
 
+      {smashRack.length > 0 ? (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h3 className="display text-xl font-semibold">Smash PPR</h3>
+            <p className="text-faint text-[11px] tracking-wide uppercase">Ceiling week · not DFS</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {smashRack.map((g) => (
+              <div key={g.pos} className="rounded-xl bg-card p-3 shadow-[var(--shadow-border)]">
+                <p className="display text-lg leading-none font-semibold">{g.pos}</p>
+                <ol className="mt-2 flex flex-col gap-1.5">
+                  {g.players.map((r) => (
+                    <li key={r.player.id} className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate text-sm">
+                        {r.player.name}
+                        <span className="text-muted-foreground ml-1 text-[11px]">
+                          {r.player.team} {r.player.home ? "vs" : "@"} {r.player.opponent}
+                        </span>
+                      </span>
+                      <span className="font-mono text-sm tabular-nums">{formatPts(r.ppr)}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div className="overflow-hidden rounded-xl bg-card shadow-[var(--shadow-border)]">
         <table className="w-full text-left text-sm">
           <thead className="text-faint text-[11px] tracking-wide uppercase">
@@ -51,12 +90,13 @@ export function PprBoard({ data }: { data: SlateData }) {
               const p = r.player;
               const dst = p.position === "DST";
               return (
-                <tr key={p.id} className="border-border/70 border-t">
+                <tr key={p.id} className={cn("border-border/70 border-t", r.smash && "bg-ink/5")}>
                   <td className="text-faint px-3 py-2 font-mono text-xs tabular-nums">{r.rank}</td>
                   <td className="px-2 py-2">
                     <div className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate font-medium">{p.name}</span>
                       {group === "FLEX" && <Badge variant="outline">{p.position}</Badge>}
+                      {r.smash && <Badge variant="it">Smash</Badge>}
                     </div>
                     <p className="text-muted-foreground text-[11px]">
                       {dst ? (
@@ -67,7 +107,11 @@ export function PprBoard({ data }: { data: SlateData }) {
                         </>
                       )}
                     </p>
-                    {r.tape ? <p className="text-faint mt-0.5 text-[11px]">{r.tape}</p> : null}
+                    {r.smash && r.smashWhy ? (
+                      <p className="text-ink mt-0.5 text-[11px]">{r.smashWhy}</p>
+                    ) : r.tape ? (
+                      <p className="text-faint mt-0.5 text-[11px]">{r.tape}</p>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <span className="display text-lg leading-none font-semibold tabular-nums">{formatPts(r.ppr)}</span>

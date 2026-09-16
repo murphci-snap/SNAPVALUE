@@ -173,7 +173,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
               format={data.format ?? "classic"}
             />
           )}
-          {tab === "pools" && <PoolStudio games={data.games} week={data.week} />}
+          {tab === "pools" && <PoolStudio games={data.games} week={data.week} season={data.season} />}
           {tab === "bets" && (
             <BetDesk games={data.games} players={data.players} week={data.week} season={data.season} />
           )}

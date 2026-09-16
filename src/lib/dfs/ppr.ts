@@ -1,4 +1,4 @@
-import type { Player } from "./types";
+import type { Game, Player } from "./types";
 import { isQuestionable, isSidelined, Q_HAIRCUT, robustSiteConsensus } from "./scoring";
 
 export type PprGroup = "QB" | "RB" | "WR" | "TE" | "FLEX" | "DST";
@@ -8,6 +8,8 @@ export interface PprRow {
   ppr: number;
   rank: number;
   tape: string;
+  smash: boolean;
+  smashWhy: string | null;
 }
 
 function tdShare(p: Player): { rushTd: number; recTd: number; passTd: number } {
@@ -93,12 +95,87 @@ function tapeFor(p: Player): string {
   return "";
 }
 
+function atdPar(p: Player): number {
+  if (p.position === "QB") return 0.36;
+  if (p.position === "RB") return 0.4;
+  if (p.position === "WR") return 0.3;
+  if (p.position === "TE") return 0.26;
+  return 0.2;
+}
+
+function pprSmashScore(p: Player, ppr: number, games: Game[]): number {
+  if (isSidelined(p.injury, p.status)) return -99;
+  let s = 0;
+  const g = games.find((x) => x.homeAbbr === p.team || x.awayAbbr === p.team);
+  const imp = g ? (p.home ? g.homeImplied : g.awayImplied) : null;
+  let script = 0;
+  if (imp != null && imp >= 28) script = 1.5;
+  else if (imp != null && imp >= 25) script = 0.8;
+  let tot = 0;
+  if (g?.total != null && g.total >= 50) tot = 1.1;
+  else if (g?.total != null && g.total >= 47) tot = 0.5;
+  s += Math.max(script, tot);
+  if (p.oppRank >= 28) s += 1.7;
+  else if (p.oppRank >= 24) s += 1.1;
+  else if (p.oppRank >= 20) s += 0.45;
+  else if (p.oppRank <= 6) s -= 1.6;
+  const propW = p.rankingMethod === "props" ? 0.45 : 1;
+  if (p.anytimeTd != null && p.anytimeTd > 0) {
+    s += Math.max(-0.12, Math.min(0.24, p.anytimeTd - atdPar(p))) * 11 * propW;
+  }
+  if (p.fppg >= 6) s += Math.max(-0.5, Math.min(1.4, (ppr - p.fppg) / 7));
+  if (ppr >= 18) s += 0.35;
+  return s;
+}
+
+function tagSmash(rows: PprRow[], games: Game[]): PprRow[] {
+  const byPos = new Map<string, PprRow[]>();
+  for (const r of rows) {
+    const pos = r.player.position;
+    const list = byPos.get(pos) ?? [];
+    list.push(r);
+    byPos.set(pos, list);
+  }
+  const smashIds = new Set<string>();
+  const why = new Map<string, string>();
+  for (const [, group] of byPos) {
+    const ranked = group
+      .map((r) => ({ r, s: pprSmashScore(r.player, r.ppr, games) }))
+      .sort((a, b) => b.s - a.s);
+    if (!ranked.length) continue;
+    const vals = ranked.map((x) => x.s);
+    const med = vals[Math.floor(vals.length / 2)] ?? 0;
+    const hi = vals[Math.max(0, Math.floor(vals.length * 0.2))] ?? med;
+    const bar = med + 0.5 * Math.max(0.8, hi - med);
+    let take = 0;
+    for (let i = 0; i < ranked.length && take < 3; i++) {
+      const row = ranked[i]!;
+      const next = ranked[i + 1];
+      const gap = row.s - (next?.s ?? row.s - 2);
+      if (take === 0 && row.s < bar && gap < 1.2) break;
+      if (take > 0 && row.s < bar) break;
+      smashIds.add(row.r.player.id);
+      const bits: string[] = [];
+      if (row.r.player.oppRank >= 24) bits.push("soft D");
+      if ((row.r.player.anytimeTd ?? 0) >= atdPar(row.r.player) + 0.05) bits.push("ATD leftover");
+      bits.push("PPR ceiling week");
+      why.set(row.r.player.id, bits.slice(0, 2).join(" · "));
+      take += 1;
+    }
+  }
+  return rows.map((r) => ({
+    ...r,
+    smash: smashIds.has(r.player.id),
+    smashWhy: why.get(r.player.id) ?? null,
+  }));
+}
+
 function byWeeklyPpr(a: { ppr: number; player: Player }, b: { ppr: number; player: Player }): number {
   if (b.ppr !== a.ppr) return b.ppr - a.ppr;
   return a.player.name.localeCompare(b.player.name);
 }
 
-export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
+export function rankPpr(players: Player[], group: PprGroup, games: Game[] = []): PprRow[] {
   const pool = players.filter((p) => {
     if (p.showdownRole === "CPT") return false;
     if (isSidelined(p.injury, p.status)) return false;
@@ -110,11 +187,14 @@ export function rankPpr(players: Player[], group: PprGroup): PprRow[] {
     ppr: Math.round(pprPoints(player) * 10) / 10,
     tape: tapeFor(player),
     rank: 0,
+    smash: false,
+    smashWhy: null as string | null,
   }));
-  return [...scored]
+  const sorted = [...scored]
     .filter((r) => r.ppr > 0 || r.player.position === "DST")
     .sort(byWeeklyPpr)
     .map((r, i) => ({ ...r, rank: i + 1 }));
+  return tagSmash(sorted, games);
 }
 
 export const PPR_GROUPS: { id: PprGroup; label: string }[] = [

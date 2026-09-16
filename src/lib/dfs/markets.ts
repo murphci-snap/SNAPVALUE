@@ -11,10 +11,24 @@ export function winProbHome(homeSpread: number): number {
 
 export function teamWinProb(game: Game, abbr: string): number | null {
   if (game.spread == null || !Number.isFinite(game.spread)) return null;
-  const homeP = winProbHome(game.spread);
+  let homeP = winProbHome(game.spread);
+  const hi = game.homeImplied;
+  const ai = game.awayImplied;
+  if (hi != null && ai != null && hi + ai >= 20) {
+    const implied = clamp(hi / (hi + ai), 0.08, 0.92);
+    homeP = 0.68 * homeP + 0.32 * implied;
+  }
+  homeP = clamp(homeP + 0.014, 0.08, 0.92);
   if (abbr === game.homeAbbr) return homeP;
   if (abbr === game.awayAbbr) return 1 - homeP;
   return null;
+}
+
+/** Estimated survivor/loser pool share from a chalk curve — not raw win%. */
+export function poolPickPct(rate: number, kind: "survivor" | "loser" = "survivor"): number {
+  const center = kind === "survivor" ? 0.72 : 0.7;
+  const raw = 1 / (1 + Math.exp(-(rate - center) * 16));
+  return clamp(raw * (kind === "survivor" ? 0.5 : 0.46), 0.02, 0.52);
 }
 
 export function formatSpread(n: number): string {
