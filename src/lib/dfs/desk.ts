@@ -378,7 +378,8 @@ function atdEdgeScore(posted: number, fair: number): number {
   const edge = fair - posted;
   let s = edge;
   if (posted >= 0.28 && posted <= 0.42) s += 0.04;
-  if (posted >= 0.55 && edge < 0.06) s -= 0.2;
+  if (posted >= 0.62 && edge < 0.05) s -= 0.25;
+  else if (posted >= 0.55 && edge < 0.06) s -= 0.08;
   if (posted > 0.5) s -= 0.03;
   return s;
 }
@@ -483,7 +484,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return !Number.isFinite(t) || t > Date.now() - 8 * 60 * 1000;
   };
 
-  const scored = board
+  const atdRows = board
     .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime) && !isSidelined(p.injury, p.status))
     .map((p) => {
       const posted = postedAtd(p);
@@ -496,15 +497,22 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         fair,
         edge,
         s,
-        american: posted > 0 ? probToAmerican(posted) : probToAmerican(fair),
+        american: posted > 0 ? probToAmerican(posted) : 0,
       };
     })
+    .filter((x) => x.prob > 0.02 && x.prob < 0.85);
+
+  const scored = atdRows
     .filter((x) => {
-      if (x.prob < 0.18 || x.prob > 0.72) return false;
-      if (x.prob >= 0.55 && x.edge < 0.06) return false;
-      return x.s > -0.04;
+      if (x.prob < 0.14 || x.prob > 0.78) return false;
+      if (x.prob >= 0.62 && x.edge < 0.05) return false;
+      return x.s > -0.1;
     })
     .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35));
+
+  const postedBest = [...atdRows].sort(
+    (a, b) => b.s - a.s || Math.abs(a.prob - 0.35) - Math.abs(b.prob - 0.35),
+  );
 
   function pairHaircut(a: Player, b: Player): number {
     const ga = gameOf(a, live);
@@ -515,13 +523,13 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return bothHigh || bothWx ? 0.92 : 1;
   }
 
-  function pickAtdPair(): [typeof scored[number], typeof scored[number]] | null {
+  function pickAtdPair(pool: typeof scored): [typeof scored[number], typeof scored[number]] | null {
     let best: [typeof scored[number], typeof scored[number]] | null = null;
     let bestS = -Infinity;
-    for (let i = 0; i < scored.length; i++) {
-      for (let j = i + 1; j < scored.length; j++) {
-        const a = scored[i]!;
-        const b = scored[j]!;
+    for (let i = 0; i < pool.length; i++) {
+      for (let j = i + 1; j < pool.length; j++) {
+        const a = pool[i]!;
+        const b = pool[j]!;
         if (a.p.team === b.p.team || a.p.gameName === b.p.gameName) continue;
         const h = pairHaircut(a.p, b.p);
         const s = (a.s + b.s) * h;
@@ -534,7 +542,9 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return best;
   }
 
-  const pair = pickAtdPair();
+  const pairEdged = pickAtdPair(scored);
+  const pair = pairEdged ?? pickAtdPair(postedBest);
+  const pairLean = !pairEdged && !!pair;
   let atdParlay: TdParlay | null = null;
   if (pair) {
     const [a, b] = pair;
@@ -563,24 +573,28 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       ],
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
-      tape: "Mid-board ATD (roughly 28–42%) with a real edge beats a −150 chalk name. Cross-game only.",
-      unit: atd2Unit(a.edge + b.edge),
+      why: pairLean
+        ? "Best available posted ATDs on remaining games. Model lean — thin edge board."
+        : `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
+      tape: pairLean
+        ? "best available · model lean"
+        : "Mid-board ATD (roughly 28–42%) with a real edge beats a −150 chalk name. Cross-game only.",
+      unit: pairLean ? "0.1u" : atd2Unit(a.edge + b.edge),
     };
   }
 
   const atd2Names = new Set((atdParlay?.legs ?? []).map((l) => l.name));
 
-  function pickAtdTriple(avoidTwo: boolean): typeof scored | null {
-    const pool = avoidTwo ? scored.filter((x) => !atd2Names.has(x.p.name)) : scored;
+  function pickAtdTriple(pool: typeof scored, avoidTwo: boolean): typeof scored | null {
+    const rows = avoidTwo ? pool.filter((x) => !atd2Names.has(x.p.name)) : pool;
     let best: typeof scored | null = null;
     let bestS = -Infinity;
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = i + 1; j < pool.length; j++) {
-        for (let k = j + 1; k < pool.length; k++) {
-          const a = pool[i]!;
-          const b = pool[j]!;
-          const c = pool[k]!;
+    for (let i = 0; i < rows.length; i++) {
+      for (let j = i + 1; j < rows.length; j++) {
+        for (let k = j + 1; k < rows.length; k++) {
+          const a = rows[i]!;
+          const b = rows[j]!;
+          const c = rows[k]!;
           const teams = new Set([a.p.team, b.p.team, c.p.team]);
           const gset = new Set([a.p.gameName, b.p.gameName, c.p.gameName]);
           if (teams.size < 3 || gset.size < 3) continue;
@@ -597,12 +611,14 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     return best;
   }
 
-  const triple = pickAtdTriple(true) ?? pickAtdTriple(false);
+  const tripleEdged = pickAtdTriple(scored, true) ?? pickAtdTriple(scored, false);
+  const triple = tripleEdged ?? pickAtdTriple(postedBest, true) ?? pickAtdTriple(postedBest, false);
+  const tripleLean = !tripleEdged && !!triple;
   let atdParlay3: TdParlay | null = null;
   if (triple) {
     const combined = parlayProb(triple.map((x) => x.prob));
     const edgeSum = triple.reduce((s, x) => s + x.edge, 0);
-    const unit = edgeSum >= 0.12 ? "0.25u" : "0.1u";
+    const unit = tripleLean ? "0.1u" : edgeSum >= 0.12 ? "0.25u" : "0.1u";
     atdParlay3 = {
       unit,
       legs: triple.map((x) => ({
@@ -615,8 +631,10 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
-      tape: `${unit} cap. Mid-board names. One miss kills it.`,
+      why: tripleLean
+        ? "Best available posted ATDs on remaining games. Model lean — thin edge board."
+        : "Three independent games. Ranked by ATD edge vs posted American, not highest juice.",
+      tape: tripleLean ? "best available · model lean" : `${unit} cap. Mid-board names. One miss kills it.`,
     };
   }
 
@@ -679,6 +697,23 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
         }
       }
     }
+    for (const avoid of [true, false]) {
+      for (const m of multi) {
+        for (const other of ranked) {
+          if (other.p.id === m.p.id) continue;
+          const atd = postedAtd(other.p);
+          if (atd < 0.18) continue;
+          const a: MultiRow = {
+            ...other,
+            kind: "atd",
+            prob: atd,
+            american: probToAmerican(atd),
+            priced: true,
+          };
+          if (okPair(m, a, avoid)) return [m, a];
+        }
+      }
+    }
     return null;
   }
 
@@ -713,30 +748,41 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
     };
   }
 
-  const lottoPool = board
-    .filter((p) => p.position !== "DST" && p.isStarter && kickoffOk(p.startTime) && !isSidelined(p.injury, p.status))
-    .map((p) => {
-      const posted = postedAtd(p);
-      const fair = fairAtd(p, live);
-      const s = atdEdgeScore(posted, fair);
-      return { p, prob: posted, american: posted > 0 ? probToAmerican(posted) : 0, s };
-    })
+  function pickLotto(pool: typeof atdRows, n: number): typeof atdRows {
+    const out: typeof atdRows = [];
+    const usedGames = new Set<string>();
+    const usedTeams = new Set<string>();
+    for (const row of pool) {
+      if (out.length >= n) break;
+      if (usedGames.has(row.p.gameName) || usedTeams.has(row.p.team)) continue;
+      usedGames.add(row.p.gameName);
+      usedTeams.add(row.p.team);
+      out.push(row);
+    }
+    return out;
+  }
+
+  const lottoN = Math.min(5, live.length);
+  const lottoMid = atdRows
     .filter((x) => x.prob >= 0.18 && x.prob <= 0.42)
     .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.28) - Math.abs(b.prob - 0.28));
-
-  const lottoPicked: typeof lottoPool = [];
-  const usedGames = new Set<string>();
-  const usedTeams = new Set<string>();
-  for (const row of lottoPool) {
-    if (lottoPicked.length >= 5) break;
-    if (usedGames.has(row.p.gameName) || usedTeams.has(row.p.team)) continue;
-    usedGames.add(row.p.gameName);
-    usedTeams.add(row.p.team);
-    lottoPicked.push(row);
+  const lottoWide = atdRows
+    .filter((x) => x.prob >= 0.14 && x.prob <= 0.55)
+    .sort((a, b) => b.s - a.s || Math.abs(a.prob - 0.28) - Math.abs(b.prob - 0.28));
+  let lottoPicked = pickLotto(lottoMid, lottoN);
+  let lottoLean = false;
+  if (lottoPicked.length < Math.min(lottoN, 3)) {
+    lottoPicked = pickLotto(lottoWide, lottoN);
+    lottoLean = true;
+  }
+  if (lottoPicked.length < Math.min(lottoN, 3)) {
+    lottoPicked = pickLotto(postedBest, lottoN);
+    lottoLean = true;
   }
 
   let lottoTicket: TdParlay | null = null;
-  if (lottoPicked.length === 5) {
+  const lottoNeed = Math.min(lottoN, Math.max(3, live.length > 3 ? 3 : live.length));
+  if (lottoPicked.length >= lottoNeed && lottoPicked.length >= 3) {
     const combined = parlayProb(lottoPicked.map((x) => x.prob));
     lottoTicket = {
       legs: lottoPicked.map((x) => ({
@@ -749,8 +795,12 @@ export function buildWeeklyDesk(games: Game[], players: Player[]): WeeklyDesk {
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Five independent games. Long-shot ATD parlay — one miss kills it. Fun only, 0.1u cap.",
-      tape: "Lotto: mid-price ATD names, no same-game stack. No IT / bargain juice in the score.",
+      why: lottoLean
+        ? `Best available posted ATDs on remaining games (${lottoPicked.length} legs). Model lean. 0.1u cap.`
+        : `${lottoPicked.length} independent games. Long-shot ATD parlay — one miss kills it. Fun only, 0.1u cap.`,
+      tape: lottoLean
+        ? "best available · model lean"
+        : "Lotto: mid-price ATD names, no same-game stack. No IT / bargain juice in the score.",
       unit: "0.1u",
     };
   }

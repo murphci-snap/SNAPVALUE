@@ -279,7 +279,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">Need two priced anytime-TD names on separate remaining games.</p>
+          <p className="text-muted-foreground text-sm">No posted anytime-TD prices on remaining games.</p>
         )}
       </section>
 
@@ -317,7 +317,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.atdParlay3.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">Need three priced anytime-TD names on separate remaining games.</p>
+          <p className="text-muted-foreground text-sm">No posted anytime-TD prices on remaining games.</p>
         )}
       </section>
 
@@ -365,12 +365,14 @@ export function BetDesk({
       <section>
         <h2 className="display text-2xl font-semibold">Lotto ticket</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Five-player anytime TD. Five games. 0.1u. One miss kills it.
+          3–5 player anytime TD on remaining games. 0.1u. One miss kills it.
         </p>
         {desk.lottoTicket ? (
           <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">5-leg ATD lotto · 0.1u</p>
+              <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
+                {desk.lottoTicket.legs.length}-leg ATD lotto · 0.1u
+              </p>
               <p className="display text-3xl leading-none font-semibold">
                 {formatAmerican(desk.lottoTicket.combinedAmerican)}
                 <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
@@ -394,7 +396,7 @@ export function BetDesk({
             <p className="text-ink mt-2 text-xs leading-relaxed">{desk.lottoTicket.tape}</p>
           </article>
         ) : (
-          <p className="text-muted-foreground text-sm">Need five priced anytime-TD names on separate games.</p>
+          <p className="text-muted-foreground text-sm">No posted anytime-TD prices on remaining games.</p>
         )}
       </section>
     </div>
