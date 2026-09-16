@@ -33,7 +33,7 @@ function whyBits(p: Player, games: Game[], _residual: number): string[] {
   const bits: string[] = [];
   const g = games.find((x) => x.homeAbbr === p.team || x.awayAbbr === p.team);
   const imp = implied(p, games);
-  if (p.salary >= 5000 && p.salary <= 8000) bits.push(`$${(p.salary / 1000).toFixed(1)}k · mid-priced smash`);
+  if (p.salary >= 5000 && p.salary <= 8000) bits.push(`$${(p.salary / 1000).toFixed(1)}k · Leverage smash`);
   const atdExp = expectedAtd(p);
   if (p.anytimeTd != null && p.anytimeTd >= atdExp + 0.06) {
     bits.push(`${Math.round(p.anytimeTd * 100)}% ATD vs typical for this salary`);
@@ -45,7 +45,7 @@ function whyBits(p: Player, games: Game[], _residual: number): string[] {
   if (p.ownership != null && p.ownership <= 12) bits.push(`${p.ownership.toFixed(0)}% own`);
   if (p.fppg >= 6 && p.projection >= p.fppg + 4) bits.push("above season pace");
   if (p.value >= 2.5 && p.salary < 8000) bits.push(`${p.value.toFixed(2)} pts/$1k`);
-  if (!bits.length) bits.push("Mid-salary smash spot — not just the expensive chalk");
+  if (!bits.length) bits.push("Leverage smash — mid-pay heaters, not the expensive chalk");
   return bits.slice(0, 3);
 }
 

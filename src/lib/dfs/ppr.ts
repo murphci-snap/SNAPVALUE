@@ -126,7 +126,7 @@ function tagSmash(rows: PprRow[], games: Game[]): PprRow[] {
       const bits: string[] = [];
       if (row.r.player.oppRank >= 24) bits.push("soft D");
       if ((row.r.player.anytimeTd ?? 0) >= 0.35) bits.push("ATD juice");
-      bits.push("PPR ceiling week — not just the expensive chalk");
+      bits.push("Leverage smash — mid-pay heaters, not the expensive chalk");
       why.set(row.r.player.id, bits.slice(0, 2).join(" · "));
       take += 1;
     }

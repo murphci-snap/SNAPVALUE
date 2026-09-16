@@ -26,7 +26,7 @@ export function PprBoard({ data }: { data: SlateData }) {
         <h2 className="display text-2xl leading-none font-semibold">Weekly PPR ranks</h2>
         <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
           Regular weekly PPR for Week {week} only — not daily fantasy, not rest-of-season. Ranked by this week's
-          full-PPR points. Smash / IT names are mid-priced ceiling weeks in PPR, not the most expensive chalk. No
+          full-PPR points. Smash / IT names are Leverage smash: mid-pay heaters — not the expensive chalk. No
           salary, no Val.
         </p>
       </header>
@@ -50,8 +50,8 @@ export function PprBoard({ data }: { data: SlateData }) {
       {smashRack.length > 0 ? (
         <section>
           <div className="mb-2 flex items-baseline justify-between gap-2">
-            <h3 className="display text-xl font-semibold">Smash this week</h3>
-            <p className="text-faint text-[11px] tracking-wide uppercase">Mid-priced smash · not chalk</p>
+            <h3 className="display text-xl font-semibold">Leverage smash</h3>
+            <p className="text-faint text-[11px] tracking-wide uppercase">Mid-pay heaters — not the expensive chalk</p>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {smashRack.map((g) => (

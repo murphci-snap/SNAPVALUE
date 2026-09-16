@@ -28,7 +28,11 @@ export function ItFactorRack({
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="display text-xl font-semibold">IT Factor</h2>
         <p className="text-faint text-[11px] tracking-wide uppercase">
-          {lens === "cash" ? "Cash smash · floor OK" : lens === "gpp" ? "GPP smash · leverage" : "Residual smash · not just chalk"}
+          {lens === "cash"
+            ? "Leverage smash · floor OK"
+            : lens === "gpp"
+              ? "Leverage smash · mid-pay heaters"
+              : "Leverage smash · not the expensive chalk"}
         </p>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
