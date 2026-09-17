@@ -189,7 +189,7 @@ function atsUnit(edge: number): string {
   return "0.25u";
 }
 
-const ATS_FLOOR = 0.085;
+const ATS_FLOOR = 0.075;
 const ML_FLOOR = 0.07;
 
 function scoreAts(game: Game, players: Player[], floor: number): { side: "home" | "away"; edge: number; why: string } | null {
@@ -564,12 +564,12 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
   }
 
   function bestSkillFree(
-    pool: typeof scored,
+    pool: typeof atdRows,
     usedGames: Set<string>,
     usedTeams: Set<string>,
     usedNames: Set<string>,
-  ): (typeof scored)[number] | null {
-    let best: (typeof scored)[number] | null = null;
+  ): (typeof atdRows)[number] | null {
+    let best: (typeof atdRows)[number] | null = null;
     for (const x of pool) {
       if (x.p.position === "QB") continue;
       if (usedNames.has(x.p.name) || usedTeams.has(x.p.team) || usedGames.has(x.p.gameName)) continue;
@@ -578,7 +578,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
     return best;
   }
 
-  function extraQbJustified(combo: typeof scored, pool: typeof scored): boolean {
+  function extraQbJustified(combo: typeof atdRows, pool: typeof atdRows): boolean {
     const qbs = combo.filter((x) => x.p.position === "QB").sort((a, b) => b.edge - a.edge);
     if (qbs.length <= 1) return true;
     for (const extra of qbs.slice(1)) {
@@ -594,7 +594,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
     return true;
   }
 
-  function comboAdj(xs: typeof scored, h: number): number {
+  function comboAdj(xs: typeof atdRows, h: number): number {
     const s = xs.reduce((n, x) => n + x.s, 0) * h;
     const q = qbCount(xs);
     return s - (q > 1 ? 0.05 * (q - 1) : 0);
@@ -824,17 +824,44 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
   }
 
   function pickLotto(pool: typeof atdRows, n: number): typeof atdRows {
+    const skill = pool
+      .filter((x) => x.p.position !== "QB")
+      .sort((a, b) => b.s - a.s || b.edge - a.edge);
+    const qbs = pool
+      .filter((x) => x.p.position === "QB")
+      .sort((a, b) => b.s - a.s || b.edge - a.edge);
     const out: typeof atdRows = [];
     const usedGames = new Set<string>();
     const usedTeams = new Set<string>();
-    for (const row of pool) {
-      if (out.length >= n) break;
-      if (usedGames.has(row.p.gameName) || usedTeams.has(row.p.team)) continue;
+    const add = (row: (typeof atdRows)[number]) => {
+      if (usedGames.has(row.p.gameName) || usedTeams.has(row.p.team)) return false;
       usedGames.add(row.p.gameName);
       usedTeams.add(row.p.team);
       out.push(row);
+      return true;
+    };
+    for (const row of skill) {
+      if (out.length >= n) break;
+      add(row);
     }
-    return out;
+    for (const qb of qbs) {
+      if (out.length >= n) break;
+      if (add(qb)) break;
+    }
+    for (const qb of qbs) {
+      if (out.length >= n) break;
+      if (usedGames.has(qb.p.gameName) || usedTeams.has(qb.p.team)) continue;
+      const others = out;
+      const skillAlt = bestSkillFree(
+        pool,
+        new Set(others.map((x) => x.p.gameName)),
+        new Set(others.map((x) => x.p.team)),
+        new Set(others.map((x) => x.p.name)),
+      );
+      if (!skillAlt || qb.edge < skillAlt.edge + 0.04) continue;
+      add(qb);
+    }
+    return out.length >= n ? out.slice(0, n) : [];
   }
 
   const lottoN = 5;
@@ -856,8 +883,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Five independent games. Posted mid-board anytime-TD only. Long-shot — one miss kills it.",
-      tape: `${unit} cap. Empty when the priced board is thin.`,
+      why: "Five independent games. Skill first, soft-cap one QB unless another QB’s real ATD edge beats skill on a free game. Posted mid-board anytime-TD only.",
+      tape: `${unit} cap. Empty when the priced skill board is thin.`,
       unit,
     };
   }

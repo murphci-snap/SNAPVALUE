@@ -166,7 +166,7 @@ export function deskTighten(bets: GradedBet[]): DeskTighten {
   };
   const spread = of("spread");
   if (cold(spread)) {
-    out.atsAdd = 0.025;
+    out.atsAdd = 0.015;
     out.notes.push("Spreads tightened from track record");
   }
   const totals = of("total");
