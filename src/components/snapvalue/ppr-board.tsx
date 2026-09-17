@@ -26,8 +26,8 @@ export function PprBoard({ data }: { data: SlateData }) {
         <h2 className="display text-2xl leading-none font-semibold">Weekly PPR ranks</h2>
         <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
           Regular weekly PPR for Week {week} only — not daily fantasy, not rest-of-season. Ranked by this week's
-          full-PPR points. Smash / IT names are Leverage smash: mid-pay heaters — not the expensive chalk. Cost and
-          matchup shown for context — sort is still PPR, not salary.
+          full-PPR points. Smash / IT names are Leverage smash: mid-pay heaters — not the expensive chalk. No
+          salary, no Val.
         </p>
       </header>
 
@@ -64,7 +64,7 @@ export function PprBoard({ data }: { data: SlateData }) {
                         <span className="min-w-0 truncate text-sm">{r.player.name}</span>
                         <span className="font-mono text-sm tabular-nums">{formatPts(r.ppr)}</span>
                       </span>
-                      <span className="text-muted-foreground text-[11px]">{playerSpotLine(r.player)}</span>
+                      <span className="text-muted-foreground text-[11px]">{playerSpotLine(r.player, { salary: false })}</span>
                     </li>
                   ))}
                 </ol>
@@ -96,7 +96,7 @@ export function PprBoard({ data }: { data: SlateData }) {
                       {r.smash && <Badge variant="it">Smash</Badge>}
                       {r.smash && <Badge variant="hot">IT</Badge>}
                     </div>
-                    <p className="text-muted-foreground text-[11px]">{playerSpotLine(p)}</p>
+                    <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { salary: false })}</p>
                     {r.smash && r.smashWhy ? (
                       <p className="text-ink mt-0.5 text-[11px]">{r.smashWhy}</p>
                     ) : r.tape ? (
