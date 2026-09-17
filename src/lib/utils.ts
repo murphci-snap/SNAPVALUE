@@ -49,13 +49,23 @@ export function playerSpotLine(
     opponent?: string;
     oppRank?: number;
     position?: string;
+    team?: string;
+    gameName?: string;
   },
-  opts?: { salary?: boolean },
+  opts?: {
+    salary?: boolean;
+    games?: { homeAbbr: string; awayAbbr: string; name?: string; isDome?: boolean; weather?: string | null }[];
+  },
 ): string {
   const bits: string[] = [];
   if (opts?.salary !== false && p.salary != null && p.salary > 0) bits.push(formatSalary(p.salary));
   if (p.opponent) bits.push(`${p.home ? "vs" : "@"} ${p.opponent}`);
   if (p.oppRank != null && p.oppRank > 0) bits.push(`${ordinal(p.oppRank)} vs ${p.position || "POS"}`);
+  const g = opts?.games?.find(
+    (x) => x.homeAbbr === p.team || x.awayAbbr === p.team || Boolean(p.gameName && x.name === p.gameName),
+  );
+  if (g?.isDome) bits.push("Dome");
+  else if (g?.weather) bits.push(g.weather.replace(/-/g, " ").trim());
   return bits.join(" · ");
 }
 

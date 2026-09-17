@@ -252,7 +252,7 @@ export function PlayerBoard({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{p.name}</span>
                       <span className="text-muted-foreground text-[11px]">
-                        {playerSpotLine(p)}
+                        {playerSpotLine(p, { games: data.games })}
                       </span>
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
@@ -341,7 +341,7 @@ export function PlayerBoard({
                             {p.injury && <Badge variant="warn">{p.injury}</Badge>}
                           </div>
                           <p className="text-muted-foreground text-[11px]">
-                            {p.position} · {playerSpotLine(p)}
+                            {p.position} · {playerSpotLine(p, { games: data.games })}
                           </p>
                         </div>
                       </div>
@@ -403,6 +403,7 @@ export function PlayerBoard({
       {selected && (
         <PlayerDetail
           player={selected}
+          games={data.games}
           locked={locks.includes(selected.id)}
           onClose={() => setSelected(null)}
           onLock={() => onToggleLock(selected.id)}
@@ -475,6 +476,7 @@ function seasonPreview(p: Player): string {
 
 function PlayerDetail({
   player,
+  games,
   locked,
   onClose,
   onLock,
@@ -482,6 +484,7 @@ function PlayerDetail({
   why,
 }: {
   player: Player;
+  games: SlateData["games"];
   locked: boolean;
   onClose: () => void;
   onLock: () => void;
@@ -503,7 +506,7 @@ function PlayerDetail({
             </p>
             <h3 className="display text-3xl leading-none font-semibold">{player.name}</h3>
             <p className="text-muted-foreground mt-1 text-sm">
-              {playerSpotLine(player)} · {kickoffLabel(player.startTime)}
+              {playerSpotLine(player, { games })} · {kickoffLabel(player.startTime)}
             </p>
           </div>
           <button type="button" onClick={onClose} className="relative size-11 text-muted-foreground" aria-label="Close">

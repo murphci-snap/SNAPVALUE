@@ -64,7 +64,7 @@ export function PprBoard({ data }: { data: SlateData }) {
                         <span className="min-w-0 truncate text-sm">{r.player.name}</span>
                         <span className="font-mono text-sm tabular-nums">{formatPts(r.ppr)}</span>
                       </span>
-                      <span className="text-muted-foreground text-[11px]">{playerSpotLine(r.player, { salary: false })}</span>
+                      <span className="text-muted-foreground text-[11px]">{playerSpotLine(r.player, { salary: false, games: data.games })}</span>
                     </li>
                   ))}
                 </ol>
@@ -96,7 +96,7 @@ export function PprBoard({ data }: { data: SlateData }) {
                       {r.smash && <Badge variant="it">Smash</Badge>}
                       {r.smash && <Badge variant="hot">IT</Badge>}
                     </div>
-                    <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { salary: false })}</p>
+                    <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { salary: false, games: data.games })}</p>
                     {r.smash && r.smashWhy ? (
                       <p className="text-ink mt-0.5 text-[11px]">{r.smashWhy}</p>
                     ) : r.tape ? (

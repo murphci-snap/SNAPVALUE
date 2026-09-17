@@ -60,7 +60,7 @@ export function ItFactorRack({
                       <span className="font-mono text-sm tabular-nums">{formatPts(p.projection)}</span>
                     </span>
                     <span className="text-muted-foreground mt-0.5 text-[11px]">
-                      {playerSpotLine(p)}
+                      {playerSpotLine(p, { games: data.games })}
                       {p.ownership != null ? ` · ${p.ownership.toFixed(0)}%` : ""}
                     </span>
                     <span className={cn("text-ink mt-1 text-[11px] leading-snug")}>{itWhy(p, data.games, lens)}</span>

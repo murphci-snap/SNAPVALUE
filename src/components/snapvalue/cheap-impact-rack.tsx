@@ -51,7 +51,7 @@ export function CheapImpactRack({
                 >
                   <span className="truncate text-base font-medium">{p.name}</span>
                   <span className="text-muted-foreground mt-0.5 text-xs">
-                    {playerSpotLine(p)}
+                    {playerSpotLine(p, { games: data.games })}
                   </span>
                   <span className="mt-3 flex items-end justify-between gap-2">
                     <span>

@@ -281,7 +281,7 @@ export function LineupStudio({
                           <span className="text-muted-foreground"> {lp.player.team}</span>
                           {lp.slot === "CPT" ? <span className="text-value"> · 1.5×</span> : null}
                         </span>
-                        <span className="text-faint block truncate text-[11px]">{playerSpotLine(lp.player)}</span>
+                        <span className="text-faint block truncate text-[11px]">{playerSpotLine(lp.player, { games })}</span>
                       </span>
                       <span className="font-mono text-xs text-muted-foreground tabular-nums">
                         {formatPts(lp.player.projection)}

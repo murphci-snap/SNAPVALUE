@@ -43,9 +43,9 @@ function findPlayer(players: Player[], name: string, team?: string): Player | un
   return hits[0] ?? players.find((p) => normalizeName(p.name).includes(key) || key.includes(normalizeName(p.name)));
 }
 
-function Spot({ player }: { player?: Player }) {
+function Spot({ player, games }: { player?: Player; games: Game[] }) {
   if (!player) return null;
-  const line = playerSpotLine(player);
+  const line = playerSpotLine(player, { games });
   if (!line) return null;
   return <p className="text-muted-foreground mt-1 text-[11px]">{line}</p>;
 }
@@ -56,7 +56,7 @@ function splitPropPick(pick: string): { name: string; market: string } {
   return { name: m[1]!, market: `${side} ${m[3]} ${m[4]}` };
 }
 
-function PropCard({ bet, kicker, players }: { bet: DeskBet; kicker: string; players: Player[] }) {
+function PropCard({ bet, kicker, players, games }: { bet: DeskBet; kicker: string; players: Player[]; games: Game[] }) {
   const { name, market } = splitPropPick(bet.pick);
   const player = findPlayer(players, name);
   return (
@@ -66,7 +66,7 @@ function PropCard({ bet, kicker, players }: { bet: DeskBet; kicker: string; play
         <p className="font-mono text-[11px] text-value tabular-nums">{bet.unit}</p>
       </div>
       <h3 className="display mt-1 text-2xl leading-none font-semibold">{name}</h3>
-      <Spot player={player} />
+      <Spot player={player} games={games} />
       <p className="display mt-2 text-lg leading-none font-semibold text-value">{market || bet.title}</p>
       <p className="text-muted-foreground mt-1 text-xs">{bet.line}</p>
       <p className="mt-3 text-sm leading-snug">{bet.why}</p>
@@ -79,7 +79,19 @@ function PropCard({ bet, kicker, players }: { bet: DeskBet; kicker: string; play
   );
 }
 
-function TdLegCard({ leg, i, players, compact }: { leg: TdLeg; i: number; players: Player[]; compact?: boolean }) {
+function TdLegCard({
+  leg,
+  i,
+  players,
+  games,
+  compact,
+}: {
+  leg: TdLeg;
+  i: number;
+  players: Player[];
+  games: Game[];
+  compact?: boolean;
+}) {
   const player = findPlayer(players, leg.name, leg.team);
   return (
     <li className="rounded-lg bg-secondary px-3 py-3">
@@ -88,7 +100,7 @@ function TdLegCard({ leg, i, players, compact }: { leg: TdLeg; i: number; player
         {leg.marketLabel ? ` · ${leg.marketLabel}` : leg.kind === "atd" ? " · ATD" : leg.kind === "multi_td" ? " · 2+ TD" : ""}
       </p>
       <p className={`display leading-none font-semibold ${compact ? "text-xl" : "text-2xl"}`}>{leg.name}</p>
-      <Spot player={player} />
+      <Spot player={player} games={games} />
       <p className="text-muted-foreground mt-1 font-mono text-xs">
         {formatAmerican(leg.american)}
         {!player ? ` · ${leg.team} vs ${leg.opponent}` : ""}
@@ -277,6 +289,7 @@ export function BetDesk({
                 key={bet.id}
                 bet={bet}
                 players={players}
+                games={games}
                 kicker={
                   bet.pick.includes("pass")
                     ? "QB pass"
@@ -314,7 +327,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 md:grid-cols-2">
               {desk.atdParlay.legs.map((leg, i) => (
-                <TdLegCard key={leg.name} leg={leg} i={i} players={players} />
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} games={games} />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.atdParlay.why}</p>
@@ -345,7 +358,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 md:grid-cols-3">
               {desk.atdParlay3.legs.map((leg, i) => (
-                <TdLegCard key={leg.name} leg={leg} i={i} players={players} />
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} games={games} />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.atdParlay3.why}</p>
@@ -377,7 +390,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 md:grid-cols-2">
               {desk.multiTdParlay.legs.map((leg, i) => (
-                <TdLegCard key={leg.name} leg={leg} i={i} players={players} />
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} games={games} />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.multiTdParlay.why}</p>
@@ -408,7 +421,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {desk.lottoTicket.legs.map((leg, i) => (
-                <TdLegCard key={leg.name} leg={leg} i={i} players={players} compact />
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} games={games} compact />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.lottoTicket.why}</p>
