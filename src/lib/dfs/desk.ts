@@ -582,6 +582,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
     const qbs = combo.filter((x) => x.p.position === "QB").sort((a, b) => b.edge - a.edge);
     if (qbs.length <= 1) return true;
     for (const extra of qbs.slice(1)) {
+      if (extra.edge < 0.04) return false;
       const others = combo.filter((x) => x.p.id !== extra.p.id);
       const skill = bestSkillFree(
         pool,
@@ -589,7 +590,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
         new Set(others.map((x) => x.p.team)),
         new Set(others.map((x) => x.p.name)),
       );
-      if (skill && extra.edge < skill.edge + 0.04) return false;
+      if (skill && extra.edge < skill.edge + 0.03) return false;
     }
     return true;
   }
@@ -597,7 +598,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
   function comboAdj(xs: typeof atdRows, h: number): number {
     const s = xs.reduce((n, x) => n + x.s, 0) * h;
     const q = qbCount(xs);
-    return s - (q > 1 ? 0.05 * (q - 1) : 0);
+    return s - (q > 1 ? 0.03 * (q - 1) : 0);
   }
 
   function pickAtdPair(pool: typeof scored): [typeof scored[number], typeof scored[number]] | null {
@@ -650,7 +651,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
       ],
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: `Two independent games. Picked on ATD edge vs posted price, not juiced chalk. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
+      why: `Two independent games. Skill-first; extra QBs only with real edge. ${booksA} · ${booksB}.${h < 1 ? " Soft haircut — both games sit in extreme totals/weather." : ""}`,
       tape: "Mid-board ATD (roughly 28–42%) with a real edge beats a −150 chalk name. Cross-game only. Empty if books have not posted enough prices.",
       unit: atd2Unit(a.edge + b.edge),
     };
@@ -708,7 +709,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Three independent games. Soft-cap one QB unless another QB’s real ATD edge beats skill on a free game. Ranked by posted ATD edge, not pass-TD padding.",
+      why: "Three independent games. Skill-first; extra QBs only with real ATD edge vs skill. One QB is fine.",
       tape: `${unit} cap. Mid-board names. One miss kills it.`,
     };
   }
@@ -829,7 +830,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
       .sort((a, b) => b.s - a.s || b.edge - a.edge);
     const qbs = pool
       .filter((x) => x.p.position === "QB")
-      .sort((a, b) => b.s - a.s || b.edge - a.edge);
+      .sort((a, b) => b.edge - a.edge || b.s - a.s);
     const out: typeof atdRows = [];
     const usedGames = new Set<string>();
     const usedTeams = new Set<string>();
@@ -851,14 +852,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
     for (const qb of qbs) {
       if (out.length >= n) break;
       if (usedGames.has(qb.p.gameName) || usedTeams.has(qb.p.team)) continue;
-      const others = out;
-      const skillAlt = bestSkillFree(
-        pool,
-        new Set(others.map((x) => x.p.gameName)),
-        new Set(others.map((x) => x.p.team)),
-        new Set(others.map((x) => x.p.name)),
-      );
-      if (!skillAlt || qb.edge < skillAlt.edge + 0.04) continue;
+      if (!extraQbJustified([...out, qb], pool)) continue;
       add(qb);
     }
     return out.length >= n ? out.slice(0, n) : [];
@@ -883,8 +877,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
       })),
       combinedAmerican: probToAmerican(combined),
       combinedProb: combined,
-      why: "Five independent games. Skill first, soft-cap one QB unless another QB’s real ATD edge beats skill on a free game. Posted mid-board anytime-TD only.",
-      tape: `${unit} cap. Empty when the priced skill board is thin.`,
+      why: "Five independent games. Skill-first; extra QBs only with real ATD edge. One QB is fine. Posted mid-board only.",
+      tape: `${unit} cap. Empty when the priced board is thin.`,
       unit,
     };
   }

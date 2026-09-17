@@ -258,7 +258,7 @@ export function BetDesk({
       <section>
         <h2 className="display text-2xl font-semibold">Two-player anytime TD</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Two legs, two games. {desk.atdParlay?.unit ?? "0.25–0.75u"} by edge. Not a same-game parlay.
+          Two legs, two games. Skill-first; extra QBs only with real edge. {desk.atdParlay?.unit ?? "0.25–0.75u"} by edge.
         </p>
         {desk.atdParlay ? (
           <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
@@ -296,7 +296,7 @@ export function BetDesk({
       <section>
         <h2 className="display text-2xl font-semibold">Three-player anytime TD</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Three legs, three games. 0.25u. Not a same-game parlay.
+          Three legs, three games. Skill-first; extra QBs only with real edge. 0.25u. Not a same-game parlay.
         </p>
         {desk.atdParlay3 ? (
           <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
@@ -375,7 +375,7 @@ export function BetDesk({
       <section>
         <h2 className="display text-2xl font-semibold">Lotto ticket</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Five-player anytime TD. Posted prices only. 0.1u. One miss kills it.
+          Five-player anytime TD. Skill-first; extra QBs only with real edge. Posted prices only. 0.1u.
         </p>
         {desk.lottoTicket ? (
           <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
