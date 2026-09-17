@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { buildWeeklyDesk, type DeskBet } from "@/lib/dfs/desk";
+import { buildWeeklyDesk, type DeskBet, type TdLeg } from "@/lib/dfs/desk";
 import { deskTighten, ledgerSummary, loadLedger, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
 import { formatAmerican, formatPct } from "@/lib/dfs/markets";
 import type { Game, Player } from "@/lib/dfs/types";
+import { normalizeName, playerSpotLine } from "@/lib/utils";
 
 function Conf({ n }: { n: number }) {
   const w = Math.max(8, Math.min(100, n));
@@ -32,6 +33,22 @@ function BetCard({ bet, kicker }: { bet: DeskBet; kicker?: string }) {
   );
 }
 
+function findPlayer(players: Player[], name: string, team?: string): Player | undefined {
+  const key = normalizeName(name);
+  const hits = players.filter((p) => normalizeName(p.name) === key);
+  if (team) {
+    const t = hits.find((p) => p.team === team);
+    if (t) return t;
+  }
+  return hits[0] ?? players.find((p) => normalizeName(p.name).includes(key) || key.includes(normalizeName(p.name)));
+}
+
+function Spot({ player }: { player?: Player }) {
+  if (!player) return null;
+  const line = playerSpotLine(player);
+  if (!line) return null;
+  return <p className="text-muted-foreground mt-1 text-[11px]">{line}</p>;
+}
 function splitPropPick(pick: string): { name: string; market: string } {
   const m = pick.match(/^(.*?)\s+([ou])(\d+(?:\.\d+)?)\s+(.+)$/i);
   if (!m) return { name: pick, market: "" };
@@ -39,8 +56,9 @@ function splitPropPick(pick: string): { name: string; market: string } {
   return { name: m[1]!, market: `${side} ${m[3]} ${m[4]}` };
 }
 
-function PropCard({ bet, kicker }: { bet: DeskBet; kicker: string }) {
+function PropCard({ bet, kicker, players }: { bet: DeskBet; kicker: string; players: Player[] }) {
   const { name, market } = splitPropPick(bet.pick);
+  const player = findPlayer(players, name);
   return (
     <li className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
       <div className="flex items-baseline justify-between gap-2">
@@ -48,6 +66,7 @@ function PropCard({ bet, kicker }: { bet: DeskBet; kicker: string }) {
         <p className="font-mono text-[11px] text-value tabular-nums">{bet.unit}</p>
       </div>
       <h3 className="display mt-1 text-2xl leading-none font-semibold">{name}</h3>
+      <Spot player={player} />
       <p className="display mt-2 text-lg leading-none font-semibold text-value">{market || bet.title}</p>
       <p className="text-muted-foreground mt-1 text-xs">{bet.line}</p>
       <p className="mt-3 text-sm leading-snug">{bet.why}</p>
@@ -56,6 +75,25 @@ function PropCard({ bet, kicker }: { bet: DeskBet; kicker: string }) {
       <p className="text-faint mt-2 font-mono text-[11px]">
         {bet.books} · conf {bet.confidence}
       </p>
+    </li>
+  );
+}
+
+function TdLegCard({ leg, i, players, compact }: { leg: TdLeg; i: number; players: Player[]; compact?: boolean }) {
+  const player = findPlayer(players, leg.name, leg.team);
+  return (
+    <li className="rounded-lg bg-secondary px-3 py-3">
+      <p className="text-faint text-[10px] tracking-[0.16em] uppercase">
+        Leg {i + 1}
+        {leg.marketLabel ? ` · ${leg.marketLabel}` : leg.kind === "atd" ? " · ATD" : leg.kind === "multi_td" ? " · 2+ TD" : ""}
+      </p>
+      <p className={`display leading-none font-semibold ${compact ? "text-xl" : "text-2xl"}`}>{leg.name}</p>
+      <Spot player={player} />
+      <p className="text-muted-foreground mt-1 font-mono text-xs">
+        {formatAmerican(leg.american)}
+        {!player ? ` · ${leg.team} vs ${leg.opponent}` : ""}
+      </p>
+      <p className="mt-2 text-xs leading-snug">{leg.why}</p>
     </li>
   );
 }
@@ -238,6 +276,7 @@ export function BetDesk({
               <PropCard
                 key={bet.id}
                 bet={bet}
+                players={players}
                 kicker={
                   bet.pick.includes("pass")
                     ? "QB pass"
@@ -275,14 +314,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 md:grid-cols-2">
               {desk.atdParlay.legs.map((leg, i) => (
-                <li key={leg.name} className="rounded-lg bg-secondary px-3 py-3">
-                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">Leg {i + 1}</p>
-                  <p className="display text-2xl leading-none font-semibold">{leg.name}</p>
-                  <p className="text-muted-foreground mt-1 font-mono text-sm">
-                    {formatAmerican(leg.american)} · {leg.team} vs {leg.opponent}
-                  </p>
-                  <p className="mt-2 text-xs leading-snug">{leg.why}</p>
-                </li>
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.atdParlay.why}</p>
@@ -313,14 +345,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 md:grid-cols-3">
               {desk.atdParlay3.legs.map((leg, i) => (
-                <li key={leg.name} className="rounded-lg bg-secondary px-3 py-3">
-                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">Leg {i + 1}</p>
-                  <p className="display text-2xl leading-none font-semibold">{leg.name}</p>
-                  <p className="text-muted-foreground mt-1 font-mono text-sm">
-                    {formatAmerican(leg.american)} · {leg.team} vs {leg.opponent}
-                  </p>
-                  <p className="mt-2 text-xs leading-snug">{leg.why}</p>
-                </li>
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.atdParlay3.why}</p>
@@ -352,16 +377,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 md:grid-cols-2">
               {desk.multiTdParlay.legs.map((leg, i) => (
-                <li key={leg.name} className="rounded-lg bg-secondary px-3 py-3">
-                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">
-                    Leg {i + 1} · {leg.marketLabel ?? (leg.kind === "atd" ? "ATD" : "2+ TD")}
-                  </p>
-                  <p className="display text-2xl leading-none font-semibold">{leg.name}</p>
-                  <p className="text-muted-foreground mt-1 font-mono text-sm">
-                    {formatAmerican(leg.american)} · {leg.team} vs {leg.opponent}
-                  </p>
-                  <p className="mt-2 text-xs leading-snug">{leg.why}</p>
-                </li>
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.multiTdParlay.why}</p>
@@ -392,14 +408,7 @@ export function BetDesk({
             </div>
             <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {desk.lottoTicket.legs.map((leg, i) => (
-                <li key={leg.name} className="rounded-lg bg-secondary px-3 py-3">
-                  <p className="text-faint text-[10px] tracking-[0.16em] uppercase">Leg {i + 1}</p>
-                  <p className="display text-xl leading-none font-semibold">{leg.name}</p>
-                  <p className="text-muted-foreground mt-1 font-mono text-xs">
-                    {formatAmerican(leg.american)} · {leg.team} vs {leg.opponent}
-                  </p>
-                  <p className="mt-2 text-xs leading-snug">{leg.why}</p>
-                </li>
+                <TdLegCard key={leg.name} leg={leg} i={i} players={players} compact />
               ))}
             </ol>
             <p className="mt-4 text-sm leading-relaxed">{desk.lottoTicket.why}</p>

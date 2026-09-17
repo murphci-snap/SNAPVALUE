@@ -9,7 +9,7 @@ import { kickoffLabel, matchupLabel, matchupTone, propLineItems, rankingLabel, s
 import { itIdSet, itWhy } from "@/lib/dfs/it-factor";
 import { cashScore, gppScore, isCashPlay, isGppPlay, isSidelined, type BoardLens } from "@/lib/dfs/scoring";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
-import { cn, formatPts, formatSalary } from "@/lib/utils";
+import { cn, formatPts, formatSalary, playerSpotLine } from "@/lib/utils";
 import { CheapImpactRack } from "./cheap-impact-rack";
 import { ItFactorRack } from "./it-factor-rack";
 
@@ -252,7 +252,7 @@ export function PlayerBoard({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{p.name}</span>
                       <span className="text-muted-foreground text-[11px]">
-                        {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)}
+                        {playerSpotLine(p)}
                       </span>
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
@@ -341,7 +341,7 @@ export function PlayerBoard({
                             {p.injury && <Badge variant="warn">{p.injury}</Badge>}
                           </div>
                           <p className="text-muted-foreground text-[11px]">
-                            {p.position} · {p.team} {p.home ? "vs" : "@"} {p.opponent}
+                            {p.position} · {playerSpotLine(p)}
                           </p>
                         </div>
                       </div>
@@ -503,7 +503,7 @@ function PlayerDetail({
             </p>
             <h3 className="display text-3xl leading-none font-semibold">{player.name}</h3>
             <p className="text-muted-foreground mt-1 text-sm">
-              {player.home ? "vs" : "@"} {player.opponent} · {kickoffLabel(player.startTime)} · {formatSalary(player.salary)}
+              {playerSpotLine(player)} · {kickoffLabel(player.startTime)}
             </p>
           </div>
           <button type="button" onClick={onClose} className="relative size-11 text-muted-foreground" aria-label="Close">

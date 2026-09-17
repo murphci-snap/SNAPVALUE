@@ -42,6 +42,20 @@ export function ordinal(n: number): string {
   }
 }
 
+export function playerSpotLine(p: {
+  salary?: number;
+  home?: boolean;
+  opponent?: string;
+  oppRank?: number;
+  position?: string;
+}): string {
+  const bits: string[] = [];
+  if (p.salary != null && p.salary > 0) bits.push(formatSalary(p.salary));
+  if (p.opponent) bits.push(`${p.home ? "vs" : "@"} ${p.opponent}`);
+  if (p.oppRank != null && p.oppRank > 0) bits.push(`${ordinal(p.oppRank)} vs ${p.position || "POS"}`);
+  return bits.join(" · ");
+}
+
 export function normalizeName(name: string): string {
   return name
     .toLowerCase()

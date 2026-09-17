@@ -6,7 +6,7 @@ import { reviewLineup, slateReviewReady, type CashVerdict } from "@/lib/dfs/cash
 import { CONTEST_META, generateLineups, lineupAsDkPaste, lineupsAsDkCsv, type ContestStyle } from "@/lib/dfs/optimizer";
 import { SLOT_LABEL } from "@/lib/dfs/constants";
 import type { Game, Lineup, Player, SlateFormat } from "@/lib/dfs/types";
-import { cn, formatPts, formatUsd, ordinal } from "@/lib/utils";
+import { cn, formatPts, formatSalary, formatUsd, playerSpotLine } from "@/lib/utils";
 
 const CLASSIC_CONTESTS: ContestStyle[] = ["single", "milly", "small", "doubleup"];
 const SHOWDOWN_CONTESTS: ContestStyle[] = ["doubleup", "milly"];
@@ -281,12 +281,7 @@ export function LineupStudio({
                           <span className="text-muted-foreground"> {lp.player.team}</span>
                           {lp.slot === "CPT" ? <span className="text-value"> · 1.5×</span> : null}
                         </span>
-                        <span className="text-faint block truncate text-[11px]">
-                          {lp.player.home ? "vs" : "@"} {lp.player.opponent || "—"}
-                          {lp.player.oppRank
-                            ? ` · ${ordinal(lp.player.oppRank)} vs ${lp.player.position}`
-                            : ""}
-                        </span>
+                        <span className="text-faint block truncate text-[11px]">{playerSpotLine(lp.player)}</span>
                       </span>
                       <span className="font-mono text-xs text-muted-foreground tabular-nums">
                         {formatPts(lp.player.projection)}
@@ -296,8 +291,8 @@ export function LineupStudio({
                           {act == null ? "—" : formatPts(act)}
                         </span>
                       ) : null}
-                      <span className="w-10 text-right font-mono text-xs tabular-nums">
-                        {(lp.player.salary / 1000).toFixed(1)}
+                      <span className="w-12 text-right font-mono text-xs tabular-nums">
+                        {formatSalary(lp.player.salary)}
                       </span>
                       <button
                         type="button"

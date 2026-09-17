@@ -1,6 +1,6 @@
 import { BARGAIN_TAKE, CHEAP_IMPACT_POS } from "@/lib/dfs/sleeper";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
-import { formatPts, formatSalary } from "@/lib/utils";
+import { formatPts, playerSpotLine } from "@/lib/utils";
 
 export function CheapImpactRack({
   data,
@@ -51,7 +51,7 @@ export function CheapImpactRack({
                 >
                   <span className="truncate text-base font-medium">{p.name}</span>
                   <span className="text-muted-foreground mt-0.5 text-xs">
-                    {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)}
+                    {playerSpotLine(p)}
                   </span>
                   <span className="mt-3 flex items-end justify-between gap-2">
                     <span>

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { PPR_GROUPS, rankPpr, type PprGroup } from "@/lib/dfs/ppr";
 import type { SlateData } from "@/lib/dfs/types";
-import { cn, formatPts } from "@/lib/utils";
+import { cn, formatPts, playerSpotLine } from "@/lib/utils";
 
 export function PprBoard({ data }: { data: SlateData }) {
   const [group, setGroup] = useState<PprGroup>("FLEX");
@@ -26,8 +26,8 @@ export function PprBoard({ data }: { data: SlateData }) {
         <h2 className="display text-2xl leading-none font-semibold">Weekly PPR ranks</h2>
         <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
           Regular weekly PPR for Week {week} only — not daily fantasy, not rest-of-season. Ranked by this week's
-          full-PPR points. Smash / IT names are Leverage smash: mid-pay heaters — not the expensive chalk. No
-          salary, no Val.
+          full-PPR points. Smash / IT names are Leverage smash: mid-pay heaters — not the expensive chalk. Cost and
+          matchup shown for context — sort is still PPR, not salary.
         </p>
       </header>
 
@@ -59,14 +59,12 @@ export function PprBoard({ data }: { data: SlateData }) {
                 <p className="display text-lg leading-none font-semibold">{g.pos}</p>
                 <ol className="mt-2 flex flex-col gap-1.5">
                   {g.players.map((r) => (
-                    <li key={r.player.id} className="flex items-baseline justify-between gap-2">
-                      <span className="min-w-0 truncate text-sm">
-                        {r.player.name}
-                        <span className="text-muted-foreground ml-1 text-[11px]">
-                          {r.player.team} {r.player.home ? "vs" : "@"} {r.player.opponent}
-                        </span>
+                    <li key={r.player.id} className="flex flex-col gap-0.5">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm">{r.player.name}</span>
+                        <span className="font-mono text-sm tabular-nums">{formatPts(r.ppr)}</span>
                       </span>
-                      <span className="font-mono text-sm tabular-nums">{formatPts(r.ppr)}</span>
+                      <span className="text-muted-foreground text-[11px]">{playerSpotLine(r.player)}</span>
                     </li>
                   ))}
                 </ol>
@@ -88,7 +86,6 @@ export function PprBoard({ data }: { data: SlateData }) {
           <tbody>
             {shown.map((r) => {
               const p = r.player;
-              const dst = p.position === "DST";
               return (
                 <tr key={p.id} className={cn("border-border/70 border-t", r.smash && "bg-ink/5")}>
                   <td className="text-faint px-3 py-2 font-mono text-xs tabular-nums">{r.rank}</td>
@@ -99,15 +96,7 @@ export function PprBoard({ data }: { data: SlateData }) {
                       {r.smash && <Badge variant="it">Smash</Badge>}
                       {r.smash && <Badge variant="hot">IT</Badge>}
                     </div>
-                    <p className="text-muted-foreground text-[11px]">
-                      {dst ? (
-                        <>vs {p.opponent}</>
-                      ) : (
-                        <>
-                          {p.team} {p.home ? "vs" : "@"} {p.opponent}
-                        </>
-                      )}
-                    </p>
+                    <p className="text-muted-foreground text-[11px]">{playerSpotLine(p)}</p>
                     {r.smash && r.smashWhy ? (
                       <p className="text-ink mt-0.5 text-[11px]">{r.smashWhy}</p>
                     ) : r.tape ? (

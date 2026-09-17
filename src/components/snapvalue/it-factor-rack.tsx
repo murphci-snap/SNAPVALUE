@@ -2,7 +2,7 @@ import { POSITIONS } from "@/lib/dfs/constants";
 import { itWhy, pickItFactor } from "@/lib/dfs/it-factor";
 import type { BoardLens } from "@/lib/dfs/scoring";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
-import { cn, formatPts, formatSalary } from "@/lib/utils";
+import { cn, formatPts, playerSpotLine } from "@/lib/utils";
 
 export function ItFactorRack({
   data,
@@ -60,7 +60,7 @@ export function ItFactorRack({
                       <span className="font-mono text-sm tabular-nums">{formatPts(p.projection)}</span>
                     </span>
                     <span className="text-muted-foreground mt-0.5 text-[11px]">
-                      {p.team} {p.home ? "vs" : "@"} {p.opponent} · {formatSalary(p.salary)}
+                      {playerSpotLine(p)}
                       {p.ownership != null ? ` · ${p.ownership.toFixed(0)}%` : ""}
                     </span>
                     <span className={cn("text-ink mt-1 text-[11px] leading-snug")}>{itWhy(p, data.games, lens)}</span>
