@@ -111,10 +111,11 @@ function lobbyToGroup(g: LobbyGroup): DkGroup {
   };
 }
 
-export async function loadDkGroups(): Promise<DkGroup[]> {
+export async function loadDkGroups(sport = "NFL"): Promise<DkGroup[]> {
+  const sp = encodeURIComponent(sport);
   try {
     const api = await getJson<{ draftGroups?: DkGroup[] }>(
-      "https://api.draftkings.com/sites/US-DK/draftgroups/v1/?sport=NFL",
+      `https://api.draftkings.com/sites/US-DK/draftgroups/v1/?sport=${sp}`,
       undefined,
       14000,
     );
@@ -123,7 +124,7 @@ export async function loadDkGroups(): Promise<DkGroup[]> {
     /* lobby fallback */
   }
   const lobby = await getJson<{ DraftGroups?: LobbyGroup[] }>(
-    "https://www.draftkings.com/lobby/getcontests?sport=NFL",
+    `https://www.draftkings.com/lobby/getcontests?sport=${sp}`,
     undefined,
     18000,
   );

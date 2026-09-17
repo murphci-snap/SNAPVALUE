@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SplatRouteImport } from './routes/$'
+import { Route as ApiNbaSlateRouteImport } from './routes/api/nba-slate'
 import { Route as ApiSlateRouteImport } from './routes/api/slate'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const SplatRoute = SplatRouteImport.update({
   path: '/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiNbaSlateRoute = ApiNbaSlateRouteImport.update({
+  id: '/api/nba-slate',
+  path: '/api/nba-slate',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSlateRoute = ApiSlateRouteImport.update({
   id: '/api/slate',
   path: '/api/slate',
@@ -32,30 +38,34 @@ const ApiSlateRoute = ApiSlateRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/api/nba-slate': typeof ApiNbaSlateRoute
   '/api/slate': typeof ApiSlateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/api/nba-slate': typeof ApiNbaSlateRoute
   '/api/slate': typeof ApiSlateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$': typeof SplatRoute
+  '/api/nba-slate': typeof ApiNbaSlateRoute
   '/api/slate': typeof ApiSlateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$' | '/api/slate'
+  fullPaths: '/' | '/$' | '/api/nba-slate' | '/api/slate'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$' | '/api/slate'
-  id: '__root__' | '/' | '/$' | '/api/slate'
+  to: '/' | '/$' | '/api/nba-slate' | '/api/slate'
+  id: '__root__' | '/' | '/$' | '/api/nba-slate' | '/api/slate'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SplatRoute: typeof SplatRoute
+  ApiNbaSlateRoute: typeof ApiNbaSlateRoute
   ApiSlateRoute: typeof ApiSlateRoute
 }
 
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/nba-slate': {
+      id: '/api/nba-slate'
+      path: '/api/nba-slate'
+      fullPath: '/api/nba-slate'
+      preLoaderRoute: typeof ApiNbaSlateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/slate': {
       id: '/api/slate'
       path: '/api/slate'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SplatRoute: SplatRoute,
+  ApiNbaSlateRoute: ApiNbaSlateRoute,
   ApiSlateRoute: ApiSlateRoute,
 }
 export const routeTree = rootRouteImport
