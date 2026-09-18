@@ -20,13 +20,25 @@ function comboPct(p: number): string {
   return `${Math.round(p * 100)}%`;
 }
 
-function TrifectaCard({ ticket }: { ticket: UfcTrifecta }) {
-  const labels: Record<string, string> = { ko: "Leg 1 · KO / TKO", sub: "Leg 2 · Submission", dec: "Leg 3 · Decision" };
+function legKindLabel(kind: UfcTrifecta["legs"][number]["kind"]): string {
+  if (kind === "ml") return "ML";
+  if (kind === "ko") return "KO / TKO";
+  if (kind === "sub") return "Submission";
+  return "Decision";
+}
+
+function ParlayCard({
+  ticket,
+  kicker,
+}: {
+  ticket: UfcTrifecta;
+  kicker: string;
+}) {
   return (
     <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
-          Trifecta parlay · {ticket.unit}
+          {kicker} · {ticket.unit}
           {ticket.priced ? "" : " · model lean"}
         </p>
         <p className="display text-3xl leading-none font-semibold">
@@ -36,13 +48,15 @@ function TrifectaCard({ ticket }: { ticket: UfcTrifecta }) {
           </span>
         </p>
       </div>
-      <ol className="mt-4 grid gap-3 md:grid-cols-3">
-        {ticket.legs.map((leg) => (
-          <li key={`${leg.kind}-${leg.fightId}`} className="rounded-lg bg-secondary/60 px-3 py-3">
-            <p className="text-faint text-[10px] tracking-[0.16em] uppercase">{labels[leg.kind] ?? leg.kind}</p>
+      <ol className={`mt-4 grid gap-3 ${ticket.legs.length >= 4 ? "sm:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3"}`}>
+        {ticket.legs.map((leg, i) => (
+          <li key={`${leg.kind}-${leg.fightId}-${i}`} className="rounded-lg bg-secondary/60 px-3 py-3">
+            <p className="text-faint text-[10px] tracking-[0.16em] uppercase">
+              Leg {i + 1} · {legKindLabel(leg.kind)}
+            </p>
             <h3 className="display mt-1 text-xl leading-none font-semibold">{leg.fighter}</h3>
             <p className="text-value mt-2 text-sm">
-              by {methodLabel(leg.kind)}
+              {leg.kind === "ml" ? "ML" : `by ${methodLabel(leg.kind)}`}
               {leg.american != null ? ` ${formatAmerican(leg.american)}` : ""}
             </p>
             <p className="text-muted-foreground mt-1 text-xs">{leg.line}</p>
@@ -53,7 +67,7 @@ function TrifectaCard({ ticket }: { ticket: UfcTrifecta }) {
       <p className="mt-4 text-sm leading-relaxed">{ticket.why}</p>
       <p className="text-ink mt-2 text-xs leading-relaxed">{ticket.tape}</p>
       <p className="text-faint mt-3 font-mono text-[11px]">
-        {ticket.books} · conf {ticket.confidence} · all three must hit
+        {ticket.books} · conf {ticket.confidence} · all legs must hit
       </p>
     </article>
   );
@@ -166,7 +180,7 @@ export function UfcBets({ data }: { data: UfcSlateData }) {
           parlay price. All three must hit.
         </p>
         {desk.trifecta ? (
-          <TrifectaCard ticket={desk.trifecta} />
+          <ParlayCard ticket={desk.trifecta} kicker="Trifecta parlay" />
         ) : (
           <p className="text-muted-foreground text-sm">{desk.trifectaNote || "Empty is better than a forced trifecta."}</p>
         )}
@@ -199,6 +213,19 @@ export function UfcBets({ data }: { data: UfcSlateData }) {
               <Card key={b.id} bet={b} kicker="0.1u lotto" />
             ))}
           </ol>
+        )}
+      </section>
+
+      <section>
+        <h2 className="display text-2xl font-semibold">Lotto parlay</h2>
+        <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
+          One ticket. Several different fights — dogs or method longshots. Combined price. 0.1u. All legs must hit.
+          Separate from the single lotto tickets.
+        </p>
+        {desk.lottoParlay ? (
+          <ParlayCard ticket={desk.lottoParlay} kicker={`${desk.lottoParlay.legs.length}-leg lotto parlay`} />
+        ) : (
+          <p className="text-muted-foreground text-sm">Need three real dogs on different fights. Empty if the board is all chalk.</p>
         )}
       </section>
 

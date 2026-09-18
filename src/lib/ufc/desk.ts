@@ -9,6 +9,7 @@ export interface UfcDesk {
   trifectaNote: string;
   props: UfcBet[];
   lotto: UfcBet[];
+  lottoParlay: UfcTrifecta | null;
   bestValue: UfcBet | null;
   moneyline: UfcBet | null;
   sources: string[];
@@ -25,6 +26,12 @@ function unitFor(edge: number, lotto = false): string {
 
 function conf(edge: number, priced: boolean): number {
   return Math.round(clamp((priced ? 48 : 32) + edge * 280, 18, 86));
+}
+
+function parlayPick(l: UfcTrifectaLeg): string {
+  const price = l.american != null ? ` ${formatAmerican(l.american)}` : "";
+  if (l.kind === "ml") return `${l.fighter} ML${price}`;
+  return `${l.fighter} by ${methodLabel(l.kind)}${price}`;
 }
 
 function parlayAmerican(odds: number[]): number {
@@ -47,6 +54,83 @@ function probToLongAmerican(p: number): number {
 function trifectaUnit(_edge: number, combinedProb: number): string {
   if (combinedProb < 0.03) return "0.1u";
   return "0.25u";
+}
+
+function buildLottoParlay(live: UfcFight[], pool: UfcFighter[]): UfcTrifecta | null {
+  type Cand = UfcTrifectaLeg & { books: string };
+  const byFight = new Map<string, Cand>();
+  for (const p of pool) {
+    const f = live.find((x) => x.id === p.fightId);
+    if (!f) continue;
+    const options: Cand[] = [];
+    if (p.ml != null && p.ml >= 175 && p.winProb < 0.52) {
+      options.push({
+        kind: "ml",
+        fighter: p.name,
+        fightName: f.name,
+        fightId: f.id,
+        line: `${f.name} · ${f.weightClass} · ${f.card}`,
+        american: p.ml,
+        priced: true,
+        model: p.winProb,
+        why: `${formatAmerican(p.ml)} dog. Favorite has to miss.`,
+        books: f.books.join("/") || "FanDuel",
+      });
+    }
+    for (const kind of ["ko", "sub"] as const) {
+      const e = methodEdge(p, f, kind);
+      if (e.american == null || e.american < 250 || e.model < 0.09) continue;
+      options.push({
+        kind,
+        fighter: p.name,
+        fightName: f.name,
+        fightId: f.id,
+        line: `${f.name} · ${f.weightClass} · ${f.card}`,
+        american: e.american,
+        priced: e.priced,
+        model: e.model,
+        why: `Method longshot ${formatAmerican(e.american)}. Model ${Math.round(e.model * 100)}%.`,
+        books: f.books.join("/") || "FanDuel",
+      });
+    }
+    if (!options.length) continue;
+    options.sort((a, b) => {
+      const dart = (x: Cand) => ((x.american ?? 0) > 700 ? 1 : 0);
+      return dart(a) - dart(b) || (b.american ?? 0) - (a.american ?? 0);
+    });
+    const best = options[0]!;
+    const prev = byFight.get(f.id);
+    if (!prev || (best.american ?? 0) > (prev.american ?? 0)) byFight.set(f.id, best);
+  }
+  const cands = [...byFight.values()].filter((c) => c.american != null && c.american >= 175);
+  cands.sort((a, b) => {
+    const band = (x: Cand) => ((x.american ?? 0) >= 180 && (x.american ?? 0) <= 550 ? 0 : 1);
+    return band(a) - band(b) || (b.american ?? 0) - (a.american ?? 0);
+  });
+  const n = cands.length >= 4 ? 4 : cands.length >= 3 ? 3 : 0;
+  if (n < 3) return null;
+  const legs = cands.slice(0, n);
+  const allPriced = legs.every((l) => l.priced && l.american != null);
+  const posted = allPriced ? parlayAmerican(legs.map((l) => l.american!)) : null;
+  const modelProb = parlayProb(legs.map((l) => l.model));
+  const postedProb = allPriced ? legs.reduce((acc, l) => acc * americanToProb(l.american!), 1) : modelProb;
+  const combinedProb = allPriced ? postedProb : modelProb;
+  const combinedAmerican = posted ?? probToLongAmerican(combinedProb);
+  const books = [...new Set(legs.flatMap((l) => (l.books ? l.books.split("/") : [])))].filter(Boolean).join("/") || (allPriced ? "FanDuel" : "model");
+  return {
+    legs,
+    combinedAmerican,
+    combinedProb,
+    unit: "0.1u",
+    priced: allPriced,
+    books,
+    edge: Math.max(0.03, allPriced ? Math.max(0, modelProb - postedProb) : modelProb),
+    confidence: conf(0.04, allPriced),
+    why: allPriced
+      ? `One ticket. Combined ${formatAmerican(combinedAmerican)}. ${legs.length} different fights — dogs and method longshots, not chalk stacked. All legs must hit.`
+      : `One ticket. Combined ${formatAmerican(combinedAmerican)} is a model lean. All legs must hit.`,
+    tape: "0.1u lotto parlay. Separate from the single lotto tickets. Empty if the board has no real dogs.",
+  };
 }
 
 function careerLine(p: UfcFighter): string {
@@ -354,6 +438,8 @@ export function buildUfcDesk(fights: UfcFight[], players: UfcFighter[]): UfcDesk
     );
   }
 
+  const lottoParlay = buildLottoParlay(live, pool);
+
   const mlBets: UfcBet[] = [];
   for (const p of pool) {
     const f = live.find((x) => x.id === p.fightId);
@@ -392,6 +478,7 @@ export function buildUfcDesk(fights: UfcFight[], players: UfcFighter[]): UfcDesk
     trifectaNote: trifectaNote || "One parlay. Three fights: KO, submission, decision. All three must hit.",
     props: props.slice(0, 6),
     lotto,
+    lottoParlay,
     bestValue,
     moneyline: mlBets[0] ?? null,
     sources,
@@ -407,7 +494,7 @@ export function publishedUfcBets(desk: UfcDesk): UfcBet[] {
       id: "ufc-trifecta",
       title: "Trifecta",
       market: "trifecta",
-      pick: t.legs.map((l) => `${l.fighter} by ${methodLabel(l.kind)}${l.american != null ? ` ${formatAmerican(l.american)}` : ""}`).join(" + "),
+      pick: t.legs.map(parlayPick).join(" + "),
       line: t.legs.map((l) => l.fightName.split(" · ")[0]).join(" / "),
       why: t.why,
       tape: t.tape,
@@ -426,6 +513,27 @@ export function publishedUfcBets(desk: UfcDesk): UfcBet[] {
   if (desk.moneyline) rows.push({ ...desk.moneyline, id: "ufc-ml" });
   for (const b of desk.props) rows.push(b);
   for (const b of desk.lotto) rows.push(b);
+  if (desk.lottoParlay && desk.lottoParlay.legs.length >= 3) {
+    const t = desk.lottoParlay;
+    rows.push({
+      id: "ufc-lotto-parlay",
+      title: "Lotto parlay",
+      market: "lotto_parlay",
+      pick: t.legs.map(parlayPick).join(" + "),
+      line: t.legs.map((l) => l.fightName.split(" · ")[0]).join(" / "),
+      why: t.why,
+      tape: t.tape,
+      unit: t.unit,
+      books: t.books,
+      edge: t.edge,
+      confidence: t.confidence,
+      priced: t.priced,
+      fightId: t.legs[0]!.fightId,
+      legs: t.legs,
+      combinedAmerican: t.combinedAmerican,
+      combinedProb: t.combinedProb,
+    });
+  }
   const seen = new Set<string>();
   return rows.filter((b) => {
     if (seen.has(b.id)) return false;

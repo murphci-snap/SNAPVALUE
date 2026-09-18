@@ -139,7 +139,7 @@ export interface UfcLineup {
 export interface UfcBet {
   id: string;
   title: string;
-  market: "trifecta" | "method" | "distance" | "rounds" | "moneyline" | "lotto";
+  market: "trifecta" | "method" | "distance" | "rounds" | "moneyline" | "lotto" | "lotto_parlay";
   pick: string;
   line: string;
   why: string;
@@ -157,7 +157,7 @@ export interface UfcBet {
 }
 
 export interface UfcTrifectaLeg {
-  kind: UfcMethod;
+  kind: UfcMethod | "ml";
   fighter: string;
   fightName: string;
   fightId: string;

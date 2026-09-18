@@ -31,7 +31,7 @@ function gradeLeg(kind: string, fighter: string | undefined, f: UfcFight): Grade
 }
 
 function gradeBet(bet: UfcBet, fights: UfcFight[]): GradeResult | null {
-  if (bet.market === "trifecta" && bet.legs?.length) {
+  if ((bet.market === "trifecta" || bet.market === "lotto_parlay") && bet.legs?.length) {
     const results: Array<GradeResult | null> = bet.legs.map((leg) => {
       const f = fightOf(fights, leg.fightId);
       if (!f) return null;
