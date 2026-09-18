@@ -123,8 +123,12 @@ export async function loadDkGroups(sport = "NFL"): Promise<DkGroup[]> {
   } catch {
     /* lobby fallback */
   }
+  return loadDkLobbyGroups(sport);
+}
+
+export async function loadDkLobbyGroups(sport: string): Promise<DkGroup[]> {
   const lobby = await getJson<{ DraftGroups?: LobbyGroup[] }>(
-    `https://www.draftkings.com/lobby/getcontests?sport=${sp}`,
+    `https://www.draftkings.com/lobby/getcontests?sport=${encodeURIComponent(sport)}`,
     undefined,
     18000,
   );

@@ -7,6 +7,9 @@ import { kickoffLabel, relativeTime } from "@/lib/dfs/format-ui";
 import type { SlateData, SlateResponse, SlateWindow } from "@/lib/dfs/types";
 import { NBA_REFRESH_MS } from "@/lib/nba/constants";
 import type { NbaSlateData, NbaSlateResponse } from "@/lib/nba/types";
+import { formatAmerican } from "@/lib/dfs/markets";
+import { UFC_REFRESH_MS } from "@/lib/ufc/constants";
+import type { UfcFight, UfcSlateData, UfcSlateResponse } from "@/lib/ufc/types";
 import { cn } from "@/lib/utils";
 import { BetDesk } from "./bet-desk";
 import { DisclaimerFooter, DisclaimerGate, readDisclaimerAccepted, writeDisclaimerAccepted } from "./disclaimer-gate";
@@ -18,9 +21,12 @@ import { NbaLineups } from "./nba-lineups";
 import { PlayerBoard } from "./player-board";
 import { PoolStudio } from "./pool-studio";
 import { PprBoard } from "./ppr-board";
+import { UfcBets } from "./ufc-bets";
+import { UfcBoard } from "./ufc-board";
+import { UfcLineups } from "./ufc-lineups";
 
 type Tab = "board" | "lineups" | "pools" | "bets" | "ppr";
-type Sport = "NFL" | "NBA";
+type Sport = "NFL" | "NBA" | "UFC";
 
 async function fetchSlate(draftGroupId?: number, force = false, window?: SlateWindow): Promise<SlateResponse> {
   const params = new URLSearchParams();
@@ -51,9 +57,24 @@ async function fetchNbaSlate(draftGroupId?: number, force = false): Promise<NbaS
   return (await res.json()) as NbaSlateResponse;
 }
 
+async function fetchUfcSlate(draftGroupId?: number, force = false): Promise<UfcSlateResponse> {
+  const params = new URLSearchParams();
+  if (draftGroupId) params.set("draftGroupId", String(draftGroupId));
+  if (force) params.set("force", "1");
+  const qs = params.toString();
+  const res = await fetch(`/api/ufc-slate${qs ? `?${qs}` : ""}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw new Error("ufc-slate");
+  return (await res.json()) as UfcSlateResponse;
+}
+
 function readSport(): Sport {
   try {
-    return localStorage.getItem("snapvalue.sport") === "NBA" ? "NBA" : "NFL";
+    const v = localStorage.getItem("snapvalue.sport");
+    if (v === "NBA" || v === "UFC") return v;
+    return "NFL";
   } catch {
     return "NFL";
   }
@@ -66,11 +87,14 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   const [draftGroupId, setDraftGroupId] = useState<number | undefined>(initialId);
   const [slateWindow, setSlateWindow] = useState<SlateWindow | undefined>(initial?.ok ? initial.window : undefined);
   const [nbaGroupId, setNbaGroupId] = useState<number | undefined>();
+  const [ufcGroupId, setUfcGroupId] = useState<number | undefined>();
   const [tab, setTab] = useState<Tab>("board");
   const [locks, setLocks] = useState<string[]>([]);
   const [excludes, setExcludes] = useState<string[]>([]);
   const [nbaLocks, setNbaLocks] = useState<string[]>([]);
   const [nbaExcludes, setNbaExcludes] = useState<string[]>([]);
+  const [ufcLocks, setUfcLocks] = useState<string[]>([]);
+  const [ufcExcludes, setUfcExcludes] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [gateReady, setGateReady] = useState(false);
   const [accepted, setAccepted] = useState(false);
@@ -88,7 +112,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     } catch {
       /* ignore */
     }
-    if (next === "NBA" && (tab === "pools" || tab === "ppr")) setTab("board");
+    if ((next === "NBA" || next === "UFC") && (tab === "pools" || tab === "ppr")) setTab("board");
   }
 
   const query = useQuery({
@@ -112,6 +136,16 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     enabled: sport === "NBA" && accepted,
   });
 
+  const ufcQuery = useQuery({
+    queryKey: ["ufc-slate", ufcGroupId ?? "auto"],
+    queryFn: () => fetchUfcSlate(ufcGroupId),
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchInterval: UFC_REFRESH_MS,
+    retry: 2,
+    enabled: sport === "UFC" && accepted,
+  });
+
   const data = query.data;
   const nba = nbaQuery.data;
   const nbaData = nba && nba.ok ? nba : undefined;
@@ -122,6 +156,16 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         ? nbaQuery.error instanceof Error
           ? nbaQuery.error.message
           : "NBA slate failed"
+        : null;
+  const ufc = ufcQuery.data;
+  const ufcData = ufc && ufc.ok ? ufc : undefined;
+  const ufcError =
+    ufc && !ufc.ok
+      ? ufc.error
+      : !ufcQuery.isLoading && ufcQuery.isError
+        ? ufcQuery.error instanceof Error
+          ? ufcQuery.error.message
+          : "UFC slate failed"
         : null;
 
 
@@ -142,12 +186,24 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     setNbaLocks((prev) => prev.filter((x) => x !== id));
   }
 
+  function toggleUfcLock(id: string) {
+    setUfcLocks((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setUfcExcludes((prev) => prev.filter((x) => x !== id));
+  }
+  function toggleUfcExclude(id: string) {
+    setUfcExcludes((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setUfcLocks((prev) => prev.filter((x) => x !== id));
+  }
+
   async function refresh() {
     setRefreshing(true);
     try {
       if (sport === "NBA") {
         const next = await fetchNbaSlate(nbaGroupId, true);
         queryClient.setQueryData(["nba-slate", nbaGroupId ?? "auto"], next);
+      } else if (sport === "UFC") {
+        const next = await fetchUfcSlate(ufcGroupId, true);
+        queryClient.setQueryData(["ufc-slate", ufcGroupId ?? "auto"], next);
       } else {
         const next = await fetchSlate(draftGroupId, true, slateWindow);
         queryClient.setQueryData(["slate", draftGroupId ?? "auto", slateWindow ?? "auto"], next);
@@ -190,6 +246,26 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     );
   }
 
+  if (sport === "UFC") {
+    return (
+      <UfcShell
+        ufc={ufcData}
+        error={ufcError}
+        loading={ufcQuery.isLoading && !ufcData}
+        tab={tab === "pools" || tab === "ppr" ? "board" : tab}
+        onTab={setTab}
+        onSport={chooseSport}
+        onSlate={setUfcGroupId}
+        onRefresh={() => void refresh()}
+        refreshing={refreshing || ufcQuery.isFetching}
+        locks={ufcLocks}
+        excludes={ufcExcludes}
+        onToggleLock={toggleUfcLock}
+        onToggleExclude={toggleUfcExclude}
+      />
+    );
+  }
+
   if (query.isLoading && !data) return <BootScreen />;
   if (!data || !data.ok) {
     return (
@@ -201,6 +277,9 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         <div className="flex gap-2">
           <Button onClick={() => chooseSport("NBA")} variant="secondary">
             NBA
+          </Button>
+          <Button onClick={() => chooseSport("UFC")} variant="secondary">
+            UFC
           </Button>
           <Button onClick={() => void refresh()}>
             <RefreshCw /> Retry
@@ -334,6 +413,9 @@ function NbaShell({
           <Button variant="secondary" onClick={() => onSport("NFL")}>
             NFL
           </Button>
+          <Button variant="secondary" onClick={() => onSport("UFC")}>
+            UFC
+          </Button>
           <Button onClick={onRefresh}>
             <RefreshCw /> Retry
           </Button>
@@ -416,6 +498,133 @@ function NbaShell({
   );
 }
 
+function UfcShell({
+  ufc,
+  error,
+  loading,
+  tab,
+  onTab,
+  onSport,
+  onSlate,
+  onRefresh,
+  refreshing,
+  locks,
+  excludes,
+  onToggleLock,
+  onToggleExclude,
+}: {
+  ufc?: UfcSlateData;
+  error: string | null;
+  loading: boolean;
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  onSport: (s: Sport) => void;
+  onSlate: (id: number, window?: SlateWindow) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+  locks: string[];
+  excludes: string[];
+  onToggleLock: (id: string) => void;
+  onToggleExclude: (id: string) => void;
+}) {
+  if (loading) return <BootScreen sport="UFC" />;
+  if (error && !ufc) {
+    return (
+      <div className="mx-auto flex min-h-dvh max-w-lg flex-col items-center justify-center gap-3 px-6 text-center">
+        <p className="display text-3xl font-semibold">SNAPVALUE</p>
+        <p className="text-muted-foreground text-sm">{error}</p>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => onSport("NFL")}>
+            NFL
+          </Button>
+          <Button variant="secondary" onClick={() => onSport("NBA")}>
+            NBA
+          </Button>
+          <Button onClick={onRefresh}>
+            <RefreshCw /> Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (!ufc) return <BootScreen sport="UFC" />;
+
+  const mainFights = ufc.fights.filter((f) => f.card === "main").length;
+
+  return (
+    <div className="hash-bg min-h-dvh">
+      <Header
+        sport="UFC"
+        ufc={ufc}
+        tab={tab}
+        onSport={onSport}
+        onSlate={onSlate}
+        onRefresh={onRefresh}
+        onPpr={() => onTab("board")}
+        refreshing={refreshing}
+      />
+      <UfcFightStrip fights={ufc.fights} />
+      {ufc.notice ? (
+        <p className="bg-ink/10 text-ink mx-auto max-w-[1440px] px-4 py-2 text-center text-sm lg:px-6">{ufc.notice}</p>
+      ) : null}
+      <div className="mx-auto max-w-[1440px] px-4 pb-16 lg:px-6">
+        <div className="text-muted-foreground mt-4 flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs tabular-nums">
+          <span>
+            <span className="text-faint">SITE </span>
+            {ufc.format === "showdown" ? "DraftKings MMA Captain" : "DraftKings MMA Classic"}
+          </span>
+          <span>
+            <span className="text-faint">CAP </span>$50,000
+          </span>
+          <span>
+            <span className="text-faint">FIGHTERS </span>
+            {ufc.players.length}
+          </span>
+          <span>
+            <span className="text-faint">MAIN </span>
+            {mainFights} fights
+          </span>
+          <span className="min-w-0">
+            <span className="text-faint">SOURCES </span>
+            {ufc.sources.filter((s) => s.ok).map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
+          </span>
+        </div>
+        <div className="mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
+          {(
+            [
+              ["board", "Players"],
+              ["lineups", "Lineups"],
+              ["bets", "Bets"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onTab(id)}
+              className={cn(
+                "h-11 flex-1 rounded-md px-1 text-center text-xs font-medium sm:text-sm",
+                tab === id ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-5">
+          {tab === "board" && (
+            <UfcBoard data={ufc} locks={locks} excludes={excludes} onToggleLock={onToggleLock} onToggleExclude={onToggleExclude} />
+          )}
+          {tab === "lineups" && (
+            <UfcLineups data={ufc} locks={locks} excludes={excludes} onToggleLock={onToggleLock} />
+          )}
+          {tab === "bets" && <UfcBets data={ufc} />}
+        </div>
+      </div>
+      <DisclaimerFooter />
+    </div>
+  );
+}
+
 function slateName(suffix: string): string {
   const raw = suffix.replace(/[()]/g, "").trim() || "Main";
   const key = raw.toLowerCase().replace(/\s+/g, " ");
@@ -445,6 +654,7 @@ function Header({
   sport,
   data,
   nba,
+  ufc,
   tab,
   onSport,
   onSlate,
@@ -455,6 +665,7 @@ function Header({
   sport: Sport;
   data?: SlateData;
   nba?: NbaSlateData;
+  ufc?: UfcSlateData;
   tab: Tab;
   onSport: (s: Sport) => void;
   onSlate: (id: number, window?: SlateWindow) => void;
@@ -462,16 +673,16 @@ function Header({
   onPpr: () => void;
   refreshing: boolean;
 }) {
-  const fetchedAt = sport === "NBA" ? nba?.fetchedAt ?? "" : data?.fetchedAt ?? "";
+  const fetchedAt = sport === "NBA" ? nba?.fetchedAt ?? "" : sport === "UFC" ? ufc?.fetchedAt ?? "" : data?.fetchedAt ?? "";
   const [now, setNow] = useState(() => Date.parse(fetchedAt) || 0);
   useEffect(() => {
     setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(id);
   }, [fetchedAt]);
-  const slates = sport === "NBA" ? nba?.slates ?? [] : data?.slates ?? [];
-  const activeId = sport === "NBA" ? nba?.draftGroupId : data?.draftGroupId;
-  const activeWindow = sport === "NBA" ? undefined : data?.window;
+  const slates = sport === "NBA" ? nba?.slates ?? [] : sport === "UFC" ? ufc?.slates ?? [] : data?.slates ?? [];
+  const activeId = sport === "NBA" ? nba?.draftGroupId : sport === "UFC" ? ufc?.draftGroupId : data?.draftGroupId;
+  const activeWindow = sport === "NFL" ? data?.window : undefined;
   return (
     <header className="border-border/80 border-b">
       <div className="relative overflow-hidden">
@@ -489,7 +700,11 @@ function Header({
             </p>
           </div>
           <p className="text-muted-foreground mt-2 max-w-xl text-sm sm:text-base">
-            {sport === "NBA" ? "Tonight’s board. Spend the cap. Smash the slate." : "Read the tape. Spend the cap. Smash the slate."}
+            {sport === "UFC"
+              ? "UFC 331. Van vs Pantoja. Spend the cap. Smash the card."
+              : sport === "NBA"
+                ? "Tonight’s board. Spend the cap. Smash the slate."
+                : "Read the tape. Spend the cap. Smash the slate."}
           </p>
         </div>
       </div>
@@ -497,7 +712,7 @@ function Header({
       <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-4 pt-3 pb-2 lg:px-6">
         <p className="display text-lg leading-none font-semibold tracking-wide">SNAPVALUE</p>
         <div className="flex rounded-md bg-secondary p-0.5 shadow-[var(--shadow-border)]">
-          {(["NFL", "NBA"] as const).map((s) => (
+          {(["NFL", "NBA", "UFC"] as const).map((s) => (
             <button
               key={s}
               type="button"
@@ -512,7 +727,7 @@ function Header({
           ))}
         </div>
         <span className="bg-secondary text-muted-foreground rounded-full px-3 py-1 font-mono text-xs">
-          {sport === "NBA" ? "DAILY" : `WK ${data?.week ?? ""}`}
+          {sport === "NFL" ? `WK ${data?.week ?? ""}` : "DAILY"}
         </span>
         <p className="text-faint hidden min-w-0 truncate font-mono text-[11px] md:block">
           {fetchedAt ? `Updated ${relativeTime(fetchedAt, now)}` : ""}
@@ -537,7 +752,7 @@ function Header({
               const chipWindow = sport === "NFL" ? extra.window : undefined;
               const on =
                 s.draftGroupId === activeId &&
-                (sport === "NBA" || (chipWindow ?? "main") === (activeWindow ?? "main"));
+                (sport !== "NFL" || (chipWindow ?? "main") === (activeWindow ?? "main"));
               const title = extra.title || (s.format === "showdown" ? s.suffix : slateName(s.suffix));
               const subtitle = extra.title
                 ? extra.subtitle || ""
@@ -570,15 +785,47 @@ function Header({
           </div>
         ) : sport === "NBA" ? (
           <p className="text-muted-foreground text-sm">No DraftKings NBA Classic slate posted yet.</p>
+        ) : sport === "UFC" ? (
+          <p className="text-muted-foreground text-sm">Main card is on the board. DraftKings salaries load when posted.</p>
         ) : null}
         <p className="text-faint mt-2 font-mono text-[11px]">
-          {sport === "NBA"
-            ? `DraftKings NBA Classic · ${formatCap(nba?.salaryCap ?? 50000)}`
-            : `${data?.format === "showdown" ? "DraftKings Showdown · CPT 1.5×" : "DraftKings Classic"} · ${formatCap(data?.salaryCap ?? 50000)}`}
+          {sport === "UFC"
+            ? `DraftKings MMA ${ufc?.format === "showdown" ? "Captain 1.5×" : "Classic"} · ${formatCap(ufc?.salaryCap ?? 50000)} · main card · Crypto.com Arena`
+            : sport === "NBA"
+              ? `DraftKings NBA Classic · ${formatCap(nba?.salaryCap ?? 50000)}`
+              : `${data?.format === "showdown" ? "DraftKings Showdown · CPT 1.5×" : "DraftKings Classic"} · ${formatCap(data?.salaryCap ?? 50000)}`}
         </p>
       </div>
       </div>
     </header>
+  );
+}
+
+function UfcFightStrip({ fights }: { fights: UfcFight[] }) {
+  if (!fights.length) return null;
+  const order: Record<UfcFight["card"], number> = { main: 0, prelims: 1, early: 2 };
+  const rows = [...fights].sort((a, b) => order[a.card] - order[b.card] || a.startTime.localeCompare(b.startTime));
+  return (
+    <div className="border-border/60 border-b">
+      <div className="mx-auto flex max-w-[1440px] gap-2 overflow-x-auto px-4 py-3 lg:px-6">
+        {rows.map((f) => (
+          <div key={f.id} className="bg-card shrink-0 rounded-lg px-3 py-2 shadow-[var(--shadow-border)]">
+            <p className="display text-sm leading-none font-semibold">
+              {f.aName} <span className="text-faint font-sans text-[10px]">vs</span> {f.bName}
+            </p>
+            <p className="text-muted-foreground mt-1 text-[11px]">
+              {f.weightClass} · {f.rounds}rd
+              {f.startTime ? ` · ${kickoffLabel(f.startTime)}` : ""}
+            </p>
+            <p className="text-faint mt-0.5 font-mono text-[11px] tabular-nums">
+              {f.card === "main" ? "MAIN" : f.card === "prelims" ? "PRELIM" : "EARLY"}
+              {f.aMl != null ? ` · ${f.aName.split(" ").pop()} ${formatAmerican(f.aMl)}` : ""}
+              {f.bMl != null ? ` / ${f.bName.split(" ").pop()} ${formatAmerican(f.bMl)}` : ""}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -660,7 +907,11 @@ function BootScreen({ sport }: { sport?: Sport }) {
     <div className="hash-bg flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
       <p className="display text-4xl font-semibold tracking-wide">SNAPVALUE</p>
       <p className="text-muted-foreground text-sm">
-        {sport === "NBA" ? "Pulling DraftKings NBA Classic, ESPN, and FanDuel…" : "Pulling Yahoo, CBS, FantasyPros, Vegas props, and X tape…"}
+        {sport === "UFC"
+          ? "Pulling DraftKings MMA, ESPN, and FanDuel…"
+          : sport === "NBA"
+            ? "Pulling DraftKings NBA Classic, ESPN, and FanDuel…"
+            : "Pulling Yahoo, CBS, FantasyPros, Vegas props, and X tape…"}
       </p>
     </div>
   );

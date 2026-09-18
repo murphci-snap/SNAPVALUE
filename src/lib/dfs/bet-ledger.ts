@@ -15,6 +15,8 @@ export interface GradedBet {
   result: GradeResult;
   pnl: number;
   settledAt: string;
+  sport?: string;
+  eventId?: string;
 }
 
 export interface LedgerStore {
@@ -278,4 +280,15 @@ export function ledgerSummary(bets: GradedBet[], week: number, season: number) {
     byMarket[k] = tally(rows);
   }
   return { season: tally(decided), week: tally(weekBets), byMarket, weekRows: bets.filter((b) => b.week === week && b.season === season) };
+}
+
+export function recordSettledBets(rows: GradedBet[]): GradedBet[] {
+  const store = readStore();
+  const have = new Set(store.bets.map((b) => `${b.week}:${b.season}:${b.id}`));
+  const fresh = rows.filter((r) => !have.has(`${r.week}:${r.season}:${r.id}`));
+  if (fresh.length) {
+    store.bets = [...store.bets, ...fresh];
+    writeStore(store);
+  }
+  return store.bets;
 }
