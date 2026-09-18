@@ -25,7 +25,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 35;
+const CACHE_VER = 36;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -143,7 +143,7 @@ const CLASSIC_COPY: Record<
   (typeof CLASSIC_WINDOWS)[number],
   { title: string; subtitle: string; suffix: string }
 > = {
-  main: { title: "Main", subtitle: "all games", suffix: "Main" },
+  main: { title: "all games", subtitle: "", suffix: "all games" },
   sun1: { title: "1pm Eastern", subtitle: "Sunday 1:00pm ET", suffix: "1pm Eastern" },
   sunday: { title: "All games Sunday", subtitle: "1pm + 4pm ET", suffix: "All games Sunday" },
   sun4: { title: "4pm Eastern only", subtitle: "Sunday 4:05/4:25 ET", suffix: "4pm Eastern only" },
@@ -201,7 +201,7 @@ function toClassicOption(g: DkGroup, w: (typeof CLASSIC_WINDOWS)[number], virtua
   const copy = CLASSIC_COPY[w];
   return {
     draftGroupId: g.draftGroupId,
-    label: `${copy.title} · ${copy.subtitle}`,
+    label: copy.subtitle ? `${copy.title} · ${copy.subtitle}` : copy.title,
     suffix: copy.suffix,
     title: copy.title,
     subtitle: copy.subtitle,

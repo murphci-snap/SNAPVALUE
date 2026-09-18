@@ -539,7 +539,9 @@ function Header({
                 s.draftGroupId === activeId &&
                 (sport === "NBA" || (chipWindow ?? "main") === (activeWindow ?? "main"));
               const title = extra.title || (s.format === "showdown" ? s.suffix : slateName(s.suffix));
-              const subtitle = extra.subtitle || `${s.gameCount} ${s.gameCount === 1 ? "game" : "games"}`;
+              const subtitle = extra.title
+                ? extra.subtitle || ""
+                : extra.subtitle || `${s.gameCount} ${s.gameCount === 1 ? "game" : "games"}`;
               return (
                 <button
                   key={chipWindow ? `${s.draftGroupId}:${chipWindow}` : String(s.draftGroupId)}
@@ -557,9 +559,11 @@ function Header({
                       {title}
                     </span>
                   </span>
-                  <span className={cn("mt-1 font-mono text-[11px] tabular-nums", on ? "text-primary-foreground/70" : "text-faint")}>
-                    {subtitle}
-                  </span>
+                  {subtitle ? (
+                    <span className={cn("mt-1 font-mono text-[11px] tabular-nums", on ? "text-primary-foreground/70" : "text-faint")}>
+                      {subtitle}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
