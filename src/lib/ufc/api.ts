@@ -15,6 +15,10 @@ import {
   UFC_SKIP_CT,
   UFC_SPORT_ID,
   UFC_VENUE,
+  isUfc331BookedName,
+  isUfc331Scratched,
+  isUfc331Window,
+  ufc331CardOf,
 } from "./constants";
 import { loadUfcFd, matchFdFight, methodProb, type UfcFdFight } from "./lines";
 import { clamp, expectedDk, lastNameOf, parseRecord, removeVigPair, round1, round2 } from "./scoring";
@@ -28,7 +32,7 @@ import type {
   UfcSlateResponse,
 } from "./types";
 
-const CACHE_VER = 3;
+const CACHE_VER = 4;
 type Hit = { at: number; value: UfcSlateResponse };
 const g = globalThis as typeof globalThis & { __snapUfcCache?: Map<string, Hit> };
 function cache() {
@@ -391,6 +395,15 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
       }
     }
     fights.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const booked = fights
+      .filter((f) => isUfc331Window(f.startTime) && !isUfc331Scratched(f.aName) && !isUfc331Scratched(f.bName))
+      .map((f) => {
+        const card = ufc331CardOf(f.aName, f.bName);
+        return card ? { ...f, card } : null;
+      })
+      .filter((f): f is UfcFight => f != null);
+    fights.splice(0, fights.length, ...booked);
+    fights.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     const espnIds: string[] = [];
     const espnByName = new Map<string, { id: string; record: string; image: string | null }>();
@@ -502,17 +515,18 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
     };
 
     if (uniqueDk.size) {
-      const fightByName = fights.map((f) => ({
-        f,
-        keys: [normalizeName(f.name), normalizeName(f.aName), normalizeName(f.bName), normalizeName(lastNameOf(f.aName)), normalizeName(lastNameOf(f.bName))],
-      }));
       for (const d of uniqueDk.values()) {
+        if (isUfc331Scratched(d.displayName) || !isUfc331BookedName(d.displayName)) continue;
         const gameName = d.competition?.name ?? "";
-        const row = fightByName.find((x) => x.keys.some((k) => normalizeName(gameName).includes(k) || k.includes(normalizeName(gameName.split(/\s+vs\.?\s+/i)[0] ?? ""))));
-        const fight = row?.f ?? fights.find((f) => f.startTime.slice(0, 16) === (d.competition?.startTime ?? "").slice(0, 16));
-        if (!fight) continue;
+        if (isUfc331Scratched(gameName)) continue;
         const n = normalizeName(d.displayName);
-        const side: "a" | "b" = normalizeName(fight.aName).includes(n) || normalizeName(lastNameOf(fight.aName)) === normalizeName(d.lastName) ? "a" : "b";
+        const last = normalizeName(d.lastName || lastNameOf(d.displayName));
+        const fight = fights.find((f) => {
+          const keys = [normalizeName(f.aName), normalizeName(f.bName), normalizeName(lastNameOf(f.aName)), normalizeName(lastNameOf(f.bName))];
+          return keys.includes(n) || keys.includes(last) || keys.some((k) => k && (n.includes(k) || k.includes(n) || last === k));
+        });
+        if (!fight) continue;
+        const side: "a" | "b" = normalizeName(fight.aName).includes(n) || normalizeName(lastNameOf(fight.aName)) === last ? "a" : "b";
         const opponent = side === "a" ? fight.bName : fight.aName;
         pushFighter({
           id: showdown ? `${d.playerId}:${d.rosterSlotId === UFC_CPT_SLOT ? "CPT" : "FLEX"}` : String(d.playerId),
@@ -558,6 +572,15 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
         });
       }
     }
+
+    const kept = players.filter(
+      (p) =>
+        isUfc331BookedName(p.name) &&
+        !isUfc331Scratched(p.name) &&
+        !isUfc331Scratched(p.opponent) &&
+        ufc331CardOf(p.name, p.opponent) != null,
+    );
+    players.splice(0, players.length, ...kept);
 
     const allPlayers = [...players];
     markValues(allPlayers);
