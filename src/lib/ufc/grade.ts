@@ -15,7 +15,32 @@ function winnerOf(f: UfcFight): string | null {
   return f.winnerName;
 }
 
+function fighterHit(winner: string, fighter?: string): boolean {
+  if (!fighter) return true;
+  const w = winner.toLowerCase();
+  const f = fighter.toLowerCase();
+  return w.includes(f) || f.includes(w) || w.split(" ").pop() === f.split(" ").pop();
+}
+
+function gradeLeg(kind: string, fighter: string | undefined, f: UfcFight): GradeResult | null {
+  if (!f.completed || !f.winnerName) return null;
+  if (!f.resultMethod && (kind === "ko" || kind === "sub" || kind === "dec")) return null;
+  const want = kind === "sub" || /submission|\bsub\b/i.test(kind) ? "sub" : kind === "ko" || /ko|tko/i.test(kind) ? "ko" : kind === "dec" || /decision|points/i.test(kind) ? "dec" : null;
+  if (!want) return fighterHit(f.winnerName, fighter) ? "win" : "loss";
+  return fighterHit(f.winnerName, fighter) && f.resultMethod === want ? "win" : "loss";
+}
+
 function gradeBet(bet: UfcBet, fights: UfcFight[]): GradeResult | null {
+  if (bet.market === "trifecta" && bet.legs?.length) {
+    const results: Array<GradeResult | null> = bet.legs.map((leg) => {
+      const f = fightOf(fights, leg.fightId);
+      if (!f) return null;
+      return gradeLeg(leg.kind, leg.fighter, f);
+    });
+    if (results.some((r) => r === "loss")) return "loss";
+    if (results.every((r) => r === "win")) return "win";
+    return null;
+  }
   const f = fightOf(fights, bet.fightId);
   if (!f || !f.completed || !f.winnerName) return null;
   const pick = bet.pick.toLowerCase();
@@ -35,9 +60,9 @@ function gradeBet(bet: UfcBet, fights: UfcFight[]): GradeResult | null {
     if (!want) {
       return pick.includes(winner.split(" ").pop() ?? winner) ? "win" : "loss";
     }
-    const fighterHit = !bet.fighter || winner.includes(bet.fighter.toLowerCase()) || bet.fighter.toLowerCase().includes(winner);
+    const hit = fighterHit(f.winnerName, bet.fighter);
     if (/fight ends/i.test(bet.title)) return f.resultMethod === want ? "win" : "loss";
-    return fighterHit && f.resultMethod === want ? "win" : "loss";
+    return hit && f.resultMethod === want ? "win" : "loss";
   }
   if (bet.market === "rounds" && f.resultRound != null && f.totalRounds != null) {
     const over = /over/i.test(bet.pick);

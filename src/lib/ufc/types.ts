@@ -151,4 +151,32 @@ export interface UfcBet {
   priced: boolean;
   fightId: string;
   fighter?: string;
+  legs?: UfcTrifectaLeg[];
+  combinedAmerican?: number | null;
+  combinedProb?: number;
+}
+
+export interface UfcTrifectaLeg {
+  kind: UfcMethod;
+  fighter: string;
+  fightName: string;
+  fightId: string;
+  line: string;
+  american: number | null;
+  priced: boolean;
+  model: number;
+  why: string;
+}
+
+export interface UfcTrifecta {
+  legs: UfcTrifectaLeg[];
+  combinedAmerican: number | null;
+  combinedProb: number;
+  unit: string;
+  why: string;
+  tape: string;
+  priced: boolean;
+  books: string;
+  edge: number;
+  confidence: number;
 }

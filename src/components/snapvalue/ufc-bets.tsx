@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { ledgerSummary, loadLedger, type GradedBet } from "@/lib/dfs/bet-ledger";
+import { formatAmerican } from "@/lib/dfs/markets";
 import { buildUfcDesk, publishedUfcBets } from "@/lib/ufc/desk";
 import { settleUfcBets } from "@/lib/ufc/grade";
-import type { UfcBet, UfcSlateData } from "@/lib/ufc/types";
+import { methodLabel } from "@/lib/ufc/scoring";
+import type { UfcBet, UfcSlateData, UfcTrifecta } from "@/lib/ufc/types";
 
 function Conf({ n }: { n: number }) {
   const w = Math.max(8, Math.min(100, n));
@@ -10,6 +12,50 @@ function Conf({ n }: { n: number }) {
     <div className="bg-secondary mt-3 h-1 overflow-hidden rounded-full">
       <div className="bg-value h-full rounded-full" style={{ width: `${w}%` }} />
     </div>
+  );
+}
+
+function comboPct(p: number): string {
+  if (p < 0.04) return `${(p * 100).toFixed(1)}%`;
+  return `${Math.round(p * 100)}%`;
+}
+
+function TrifectaCard({ ticket }: { ticket: UfcTrifecta }) {
+  const labels: Record<string, string> = { ko: "Leg 1 · KO / TKO", sub: "Leg 2 · Submission", dec: "Leg 3 · Decision" };
+  return (
+    <article className="rounded-xl bg-card p-5 shadow-[var(--shadow-border)]">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="text-faint text-[10px] tracking-[0.18em] uppercase">
+          Trifecta parlay · {ticket.unit}
+          {ticket.priced ? "" : " · model lean"}
+        </p>
+        <p className="display text-3xl leading-none font-semibold">
+          {ticket.combinedAmerican != null ? formatAmerican(ticket.combinedAmerican) : "—"}
+          <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
+            {comboPct(ticket.combinedProb)} combined
+          </span>
+        </p>
+      </div>
+      <ol className="mt-4 grid gap-3 md:grid-cols-3">
+        {ticket.legs.map((leg) => (
+          <li key={`${leg.kind}-${leg.fightId}`} className="rounded-lg bg-secondary/60 px-3 py-3">
+            <p className="text-faint text-[10px] tracking-[0.16em] uppercase">{labels[leg.kind] ?? leg.kind}</p>
+            <h3 className="display mt-1 text-xl leading-none font-semibold">{leg.fighter}</h3>
+            <p className="text-value mt-2 text-sm">
+              by {methodLabel(leg.kind)}
+              {leg.american != null ? ` ${formatAmerican(leg.american)}` : ""}
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">{leg.line}</p>
+            <p className="text-ink mt-2 text-xs leading-snug">{leg.why}</p>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-4 text-sm leading-relaxed">{ticket.why}</p>
+      <p className="text-ink mt-2 text-xs leading-relaxed">{ticket.tape}</p>
+      <p className="text-faint mt-3 font-mono text-[11px]">
+        {ticket.books} · conf {ticket.confidence} · all three must hit
+      </p>
+    </article>
   );
 }
 
@@ -116,15 +162,14 @@ export function UfcBets({ data }: { data: UfcSlateData }) {
       <section>
         <h2 className="display text-2xl font-semibold">Trifecta</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          Every card: one KO/TKO winner, one submission winner, one decision winner. Three different fights. Method
-          prices when posted; otherwise a labeled model lean.
+          One ticket. One KO/TKO winner, one submission winner, one decision winner — three different fights. Combined
+          parlay price. All three must hit.
         </p>
-        {desk.trifecta.note ? <p className="text-ink mb-3 text-sm">{desk.trifecta.note}</p> : null}
-        <ol className="grid gap-3 md:grid-cols-3">
-          {desk.trifecta.ko ? <Card bet={desk.trifecta.ko} kicker="KO / TKO" /> : <li className="text-muted-foreground text-sm">No KO/TKO leg.</li>}
-          {desk.trifecta.sub ? <Card bet={desk.trifecta.sub} kicker="Submission" /> : <li className="text-muted-foreground text-sm">No submission leg.</li>}
-          {desk.trifecta.dec ? <Card bet={desk.trifecta.dec} kicker="Decision" /> : <li className="text-muted-foreground text-sm">No decision leg.</li>}
-        </ol>
+        {desk.trifecta ? (
+          <TrifectaCard ticket={desk.trifecta} />
+        ) : (
+          <p className="text-muted-foreground text-sm">{desk.trifectaNote || "Empty is better than a forced trifecta."}</p>
+        )}
       </section>
 
       <section>

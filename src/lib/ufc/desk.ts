@@ -1,11 +1,12 @@
 import { americanToProb } from "@/lib/dfs/scoring";
-import { formatAmerican } from "@/lib/dfs/markets";
+import { formatAmerican, parlayProb } from "@/lib/dfs/markets";
 import { clamp, methodLabel, removeVigN, removeVigPair, round2 } from "./scoring";
 import { methodProb } from "./lines";
-import type { UfcBet, UfcFight, UfcFighter, UfcMethod } from "./types";
+import type { UfcBet, UfcFight, UfcFighter, UfcMethod, UfcTrifecta, UfcTrifectaLeg } from "./types";
 
 export interface UfcDesk {
-  trifecta: { ko: UfcBet | null; sub: UfcBet | null; dec: UfcBet | null; note: string };
+  trifecta: UfcTrifecta | null;
+  trifectaNote: string;
   props: UfcBet[];
   lotto: UfcBet[];
   bestValue: UfcBet | null;
@@ -24,6 +25,28 @@ function unitFor(edge: number, lotto = false): string {
 
 function conf(edge: number, priced: boolean): number {
   return Math.round(clamp((priced ? 48 : 32) + edge * 280, 18, 86));
+}
+
+function parlayAmerican(odds: number[]): number {
+  let dec = 1;
+  for (const a of odds) {
+    if (!Number.isFinite(a) || a === 0) continue;
+    dec *= a > 0 ? a / 100 + 1 : 100 / Math.abs(a) + 1;
+  }
+  if (dec <= 1.01) return -10000;
+  if (dec >= 2) return Math.round((dec - 1) * 100);
+  return Math.round(-100 / (dec - 1));
+}
+
+function probToLongAmerican(p: number): number {
+  const x = clamp(p, 0.004, 0.97);
+  if (x >= 0.5) return Math.round((-100 * x) / (1 - x));
+  return Math.round((100 * (1 - x)) / x);
+}
+
+function trifectaUnit(_edge: number, combinedProb: number): string {
+  if (combinedProb < 0.03) return "0.1u";
+  return "0.25u";
 }
 
 function careerLine(p: UfcFighter): string {
@@ -119,11 +142,12 @@ export function buildUfcDesk(fights: UfcFight[], players: UfcFighter[]): UfcDesk
   methodBets.sort((a, b) => Number(b.priced) - Number(a.priced) || b.model - a.model || b.rawEdge - a.rawEdge);
 
   const usedFights = new Set<string>();
-  const pickKind = (kind: UfcMethod): UfcBet | null => {
+  const pickKind = (kind: UfcMethod) => {
     const rows = methodBets.filter((b) => b.kind === kind && !usedFights.has(b.fightId));
     const ranked = [...rows].sort((a, b) => {
       const chalk = (x: typeof a) => (x.priced && (x.american ?? 0) <= -350 ? 1 : 0);
-      return chalk(a) - chalk(b) || Number(b.priced) - Number(a.priced) || b.rawEdge - a.rawEdge || b.model - a.model;
+      const dart = (x: typeof a) => (x.priced && (x.american ?? 0) >= 700 ? 1 : 0);
+      return chalk(a) - chalk(b) || dart(a) - dart(b) || Number(b.priced) - Number(a.priced) || b.model - a.model || b.rawEdge - a.rawEdge;
     });
     const row =
       kind === "sub"
@@ -131,20 +155,65 @@ export function buildUfcDesk(fights: UfcFight[], players: UfcFighter[]): UfcDesk
         : ranked.find((b) => !(b.priced && (b.american ?? 0) <= -400)) ?? ranked[0];
     if (!row) return null;
     usedFights.add(row.fightId);
-    return { ...row, market: "trifecta", unit: unitFor(Math.max(row.rawEdge, 0.04)) };
+    return row;
   };
 
   const realSub = methodBets.find((b) => b.kind === "sub" && (b.priced || b.subWins >= 1) && b.model >= 0.08);
-  let subNote = "";
+  let trifectaNote = "";
   const sub = realSub ? pickKind("sub") : null;
   if (!realSub) {
-    subNote = "No real submission lean on this card — nobody with sub wins is priced, and the model won’t force a fake sub.";
+    trifectaNote = "No real submission lean on this card — nobody with sub wins is priced, and the model won’t force a fake sub. Trifecta stays empty until a real sub leg exists.";
   }
   const ko = pickKind("ko");
   const dec = pickKind("dec");
-  const trifectaNote = [subNote, !ko ? "No KO/TKO leg clearing the bar." : "", !dec ? "No decision leg clearing the bar." : ""]
-    .filter(Boolean)
-    .join(" ");
+  if (!ko) trifectaNote = [trifectaNote, "No KO/TKO leg clearing the bar."].filter(Boolean).join(" ");
+  if (!dec) trifectaNote = [trifectaNote, "No decision leg clearing the bar."].filter(Boolean).join(" ");
+
+  let trifecta: UfcTrifecta | null = null;
+  if (ko && sub && dec) {
+    const rawLegs = [
+      { row: ko, kind: "ko" as const },
+      { row: sub, kind: "sub" as const },
+      { row: dec, kind: "dec" as const },
+    ];
+    const legs: UfcTrifectaLeg[] = rawLegs.map(({ row, kind }) => ({
+      kind,
+      fighter: row.fighter ?? row.title,
+      fightName: row.line,
+      fightId: row.fightId,
+      line: row.line,
+      american: row.american,
+      priced: row.priced,
+      model: row.model,
+      why: row.why,
+    }));
+    const allPriced = legs.every((l) => l.priced && l.american != null);
+    const posted = allPriced ? parlayAmerican(legs.map((l) => l.american!)) : null;
+    const modelProb = parlayProb(legs.map((l) => l.model));
+    const postedProb = allPriced
+      ? legs.reduce((acc, l) => acc * americanToProb(l.american!), 1)
+      : modelProb;
+    const combinedProb = allPriced ? postedProb : modelProb;
+    const combinedAmerican = posted ?? probToLongAmerican(combinedProb);
+    const edge = allPriced ? Math.max(0, modelProb - postedProb) : Math.max(0.04, modelProb);
+    const unit = trifectaUnit(edge, combinedProb);
+    const books = [...new Set(rawLegs.flatMap(({ row }) => (row.books ? row.books.split("/") : [])))].filter(Boolean).join("/") || (allPriced ? "FanDuel" : "model");
+    trifecta = {
+      legs,
+      combinedAmerican,
+      combinedProb,
+      unit,
+      priced: allPriced,
+      books,
+      edge,
+      confidence: conf(edge, allPriced),
+      why: allPriced
+        ? `One ticket. Combined ${formatAmerican(combinedAmerican)}. Model hit rate ${Math.round(modelProb * 1000) / 10}% vs posted ${Math.round(postedProb * 1000) / 10}%. All three must cash.`
+        : `One ticket. Combined ${formatAmerican(combinedAmerican)} is a model lean — at least one method isn’t posted. All three must cash.`,
+      tape: `${unit}. Three different fights. KO + submission + decision. Not three singles.`,
+    };
+    if (!trifectaNote) trifectaNote = "One parlay. Three fights. All three must hit.";
+  }
 
   const props: UfcBet[] = [];
   for (const f of live) {
@@ -319,7 +388,8 @@ export function buildUfcDesk(fights: UfcFight[], players: UfcFighter[]): UfcDesk
   const bestValue = catalog[0] ?? null;
 
   return {
-    trifecta: { ko, sub, dec, note: trifectaNote || "Three different fights: KO, submission, decision." },
+    trifecta,
+    trifectaNote: trifectaNote || "One parlay. Three fights: KO, submission, decision. All three must hit.",
     props: props.slice(0, 6),
     lotto,
     bestValue,
@@ -331,9 +401,27 @@ export function buildUfcDesk(fights: UfcFight[], players: UfcFighter[]): UfcDesk
 
 export function publishedUfcBets(desk: UfcDesk): UfcBet[] {
   const rows: UfcBet[] = [];
-  if (desk.trifecta.ko) rows.push({ ...desk.trifecta.ko, id: "ufc-tri-ko" });
-  if (desk.trifecta.sub) rows.push({ ...desk.trifecta.sub, id: "ufc-tri-sub" });
-  if (desk.trifecta.dec) rows.push({ ...desk.trifecta.dec, id: "ufc-tri-dec" });
+  if (desk.trifecta && desk.trifecta.legs.length === 3) {
+    const t = desk.trifecta;
+    rows.push({
+      id: "ufc-trifecta",
+      title: "Trifecta",
+      market: "trifecta",
+      pick: t.legs.map((l) => `${l.fighter} by ${methodLabel(l.kind)}${l.american != null ? ` ${formatAmerican(l.american)}` : ""}`).join(" + "),
+      line: t.legs.map((l) => l.fightName.split(" · ")[0]).join(" / "),
+      why: t.why,
+      tape: t.tape,
+      unit: t.unit,
+      books: t.books,
+      edge: t.edge,
+      confidence: t.confidence,
+      priced: t.priced,
+      fightId: t.legs[0]!.fightId,
+      legs: t.legs,
+      combinedAmerican: t.combinedAmerican,
+      combinedProb: t.combinedProb,
+    });
+  }
   if (desk.bestValue) rows.push({ ...desk.bestValue, id: `ufc-best-${desk.bestValue.id}` });
   if (desk.moneyline) rows.push({ ...desk.moneyline, id: "ufc-ml" });
   for (const b of desk.props) rows.push(b);
