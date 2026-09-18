@@ -11,6 +11,7 @@ import { cashScore, gppScore, isCashPlay, isGppPlay, isSidelined, type BoardLens
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary, playerSpotLine } from "@/lib/utils";
 import { CheapImpactRack } from "./cheap-impact-rack";
+import { CyBadge } from "./cy-badge";
 import { ItFactorRack } from "./it-factor-rack";
 
 type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name" | "ownership";
@@ -276,7 +277,9 @@ export function PlayerBoard({
                   >
                     <span className="text-faint w-4 font-mono text-xs">{i + 1}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{p.name}</span>
+                      <span className="block truncate text-sm">
+                        {p.name} <CyBadge cy={p.contractYear} />
+                      </span>
                       <span className="text-muted-foreground text-[11px]">
                         {playerSpotLine(p, { games: data.games })}
                       </span>
@@ -367,6 +370,7 @@ export function PlayerBoard({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="truncate font-medium">{p.name}</span>
+                            <CyBadge cy={p.contractYear} />
                             {p.showdownRole === "CPT" && <Badge variant="hot">CPT</Badge>}
                             {itIds.has(p.id) && <Badge variant="it">IT</Badge>}
                             {p.cheapImpact && <Badge variant="value">Bargain</Badge>}
@@ -540,10 +544,14 @@ function PlayerDetail({
             <p className="text-faint display text-xs tracking-[0.18em] uppercase">
               {player.position} · {player.team}
             </p>
-            <h3 className="display text-3xl leading-none font-semibold">{player.name}</h3>
+            <h3 className="display flex items-center gap-2 text-3xl leading-none font-semibold">
+              {player.name}
+              <CyBadge cy={player.contractYear} />
+            </h3>
             <p className="text-muted-foreground mt-1 text-sm">
               {playerSpotLine(player, { games })} · {kickoffLabel(player.startTime)}
             </p>
+            {player.contractYear ? <p className="text-[#f0c14b] mt-1 text-xs font-medium">{player.contractYear.blurb}</p> : null}
           </div>
           <button type="button" onClick={onClose} className="relative size-11 text-muted-foreground" aria-label="Close">
             <X className="mx-auto size-5" />

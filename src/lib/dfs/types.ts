@@ -1,3 +1,5 @@
+import type { ContractYear } from "@/lib/contracts";
+
 export type Position = "QB" | "RB" | "WR" | "TE" | "DST" | "K";
 export type FlexPosition = "RB" | "WR" | "TE";
 export type RosterSlot =
@@ -161,6 +163,7 @@ export interface Player {
   anytimeTd: number | null;
   cheapImpact: boolean;
   cheapImpactWhy: string | null;
+  contractYear: ContractYear | null;
   showdownRole: ShowdownRole | null;
   ownership: number | null;
   ownershipSource: "model" | "site" | null;

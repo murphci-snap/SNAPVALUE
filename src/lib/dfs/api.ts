@@ -1,3 +1,4 @@
+import { applyContractYears, loadNflContractYears } from "@/lib/contracts";
 import { createServerFn } from "@tanstack/react-start";
 import { normalizeName } from "@/lib/utils";
 import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP, SHOWDOWN_POSITIONS } from "./constants";
@@ -25,7 +26,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 37;
+const CACHE_VER = 38;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -647,7 +648,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean, window?:
       },
     });
 
-    const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, sleeperIdx, propsBundle, scores] = await Promise.all([
+    const [draftablesJson, espnJson, yahooIdx, cbsIdx, fpIdx, sleeperIdx, propsBundle, scores, cyIdx] = await Promise.all([
       loadDkDraftables(selected.draftGroupId),
       settled(
         getJson<{ players: EspnPlayerRow[] }>(
@@ -662,6 +663,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean, window?:
       sleeperP,
       propsP,
       withTimeout(settled(loadScoreboard(season, week, state.season_type)).then((v) => v ?? new Map()), 9000, new Map()),
+      withTimeout(settled(loadNflContractYears()), extrasMs, null),
     ]);
 
     const idx = espnIndex(espnJson?.players ?? []);
@@ -898,6 +900,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean, window?:
         anytimeTd: props?.line.anytimeTd ?? null,
         cheapImpact: false,
         cheapImpactWhy: null,
+        contractYear: null,
         showdownRole,
         ownership: null,
         ownershipSource: null,
@@ -994,6 +997,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean, window?:
     markOwnership(players);
     markItFactor(players, games);
     markCheapImpact(players);
+    applyContractYears(players, cyIdx);
     players.sort((a, b) => b.projection - a.projection || b.salary - a.salary);
 
     const trimmed = players.filter((p) => {

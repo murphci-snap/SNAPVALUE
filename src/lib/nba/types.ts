@@ -1,3 +1,4 @@
+import type { ContractYear } from "@/lib/contracts";
 import type { Game, MatchupQuality, RankingMethod, SlateFormat } from "@/lib/dfs/types";
 
 export type NbaPos = "PG" | "SG" | "SF" | "PF" | "C";
@@ -47,6 +48,7 @@ export interface NbaPlayer {
   itFactorWhy: string | null;
   cheapImpact: boolean;
   cheapImpactWhy: string | null;
+  contractYear: ContractYear | null;
   ownership: number | null;
   box: NbaBox | null;
   props: { pts?: number; reb?: number; ast?: number; threes?: number; books: string[] } | null;

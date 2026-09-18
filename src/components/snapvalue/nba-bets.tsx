@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { buildNbaDesk } from "@/lib/nba/desk";
 import type { NbaSlateData } from "@/lib/nba/types";
 import { playerSpotLine } from "@/lib/utils";
+import { CyBadge } from "./cy-badge";
 
 export function NbaBets({ data }: { data: NbaSlateData }) {
   const desk = useMemo(() => buildNbaDesk(data.games, data.players), [data.games, data.players]);
@@ -60,7 +61,10 @@ export function NbaBets({ data }: { data: NbaSlateData }) {
               return (
                 <li key={b.id} className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
                   <p className="font-mono text-[11px] text-value">{b.unit}</p>
-                  <h3 className="display text-2xl font-semibold">{b.title}</h3>
+                  <h3 className="display flex items-center gap-2 text-2xl font-semibold">
+                    {b.title}
+                    <CyBadge cy={p?.contractYear} />
+                  </h3>
                   {p ? <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games, weather: false })}</p> : null}
                   <p className="text-value mt-2 text-lg">{b.pick.replace(b.title, "").trim()}</p>
                   <p className="mt-2 text-sm">{b.why}</p>

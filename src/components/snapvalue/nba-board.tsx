@@ -8,6 +8,7 @@ import { pickNbaIt } from "@/lib/nba/it";
 import { NBA_BARGAIN_POS } from "@/lib/nba/sleeper";
 import type { NbaLens, NbaPos, NbaSlateData } from "@/lib/nba/types";
 import { cn, formatPts, formatSalary, playerSpotLine } from "@/lib/utils";
+import { CyBadge } from "./cy-badge";
 
 export function NbaBoard({
   data,
@@ -144,7 +145,7 @@ export function NbaBoard({
                   <li key={p.id} className="flex items-baseline justify-between gap-2">
                     <span className="min-w-0">
                       <span className="block truncate text-sm">
-                        {i + 1}. {p.name}
+                        {i + 1}. {p.name} <CyBadge cy={p.contractYear} />
                       </span>
                       <span className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games, weather: false })}</span>
                     </span>
@@ -201,6 +202,7 @@ export function NbaBoard({
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1.5">
                           <span className="truncate font-medium">{p.name}</span>
+                          <CyBadge cy={p.contractYear} />
                           {p.itFactor && <Badge variant="it">IT</Badge>}
                           {p.cheapImpact && <Badge variant="value">Bargain</Badge>}
                           {p.isValuePlay && <Badge variant="value">Value</Badge>}
@@ -277,7 +279,9 @@ function NbaBargain({ data, pos }: { data: NbaSlateData; pos: NbaPos | "ALL" }) 
                 <p className="text-muted-foreground text-xs">No cheap names</p>
               ) : (
                 <>
-                  <p className="mt-1 truncate text-base font-medium">{p.name}</p>
+                  <p className="mt-1 flex items-center gap-1.5 truncate text-base font-medium">
+                    {p.name} <CyBadge cy={p.contractYear} />
+                  </p>
                   <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games, weather: false })}</p>
                   <p className="text-value display mt-2 text-2xl font-semibold">{p.value.toFixed(2)}</p>
                   {p.cheapImpactWhy ? <p className="text-ink mt-1 text-xs">{p.cheapImpactWhy}</p> : null}
@@ -310,7 +314,9 @@ function NbaIt({ data, pos, lens }: { data: NbaSlateData; pos: NbaPos | "ALL"; l
             <ol className="mt-2 flex flex-col gap-2">
               {g.players.map((p) => (
                 <li key={p.id}>
-                  <p className="truncate text-sm font-medium">{p.name}</p>
+                  <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                    {p.name} <CyBadge cy={p.contractYear} />
+                  </p>
                   <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games, weather: false })}</p>
                   {p.itFactorWhy ? <p className="text-ink mt-1 text-[11px]">{p.itFactorWhy}</p> : null}
                 </li>

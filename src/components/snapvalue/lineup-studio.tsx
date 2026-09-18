@@ -7,6 +7,7 @@ import { CONTEST_META, generateLineups, lineupAsDkPaste, lineupsAsDkCsv, type Co
 import { SLOT_LABEL } from "@/lib/dfs/constants";
 import type { Game, Lineup, Player, SlateFormat } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary, formatUsd, playerSpotLine } from "@/lib/utils";
+import { CyBadge } from "./cy-badge";
 
 const CLASSIC_CONTESTS: ContestStyle[] = ["single", "milly", "small", "doubleup"];
 const SHOWDOWN_CONTESTS: ContestStyle[] = ["doubleup", "milly"];
@@ -278,6 +279,7 @@ export function LineupStudio({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm">
                           {lp.player.name}
+                          <CyBadge cy={lp.player.contractYear} />
                           <span className="text-muted-foreground"> {lp.player.team}</span>
                           {lp.slot === "CPT" ? <span className="text-value"> · 1.5×</span> : null}
                         </span>

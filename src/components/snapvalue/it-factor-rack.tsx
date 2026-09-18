@@ -3,6 +3,7 @@ import { itWhy, pickItFactor } from "@/lib/dfs/it-factor";
 import type { BoardLens } from "@/lib/dfs/scoring";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { cn, formatPts, playerSpotLine } from "@/lib/utils";
+import { CyBadge } from "./cy-badge";
 
 export function ItFactorRack({
   data,
@@ -56,7 +57,9 @@ export function ItFactorRack({
                     className="hover:bg-accent flex w-full flex-col rounded-lg px-1.5 py-1.5 text-left transition-colors duration-150"
                   >
                     <span className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{p.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {p.name} <CyBadge cy={p.contractYear} />
+                      </span>
                       <span className="font-mono text-sm tabular-nums">{formatPts(p.projection)}</span>
                     </span>
                     <span className="text-muted-foreground mt-0.5 text-[11px]">

@@ -4,6 +4,7 @@ import { deskTighten, ledgerSummary, loadLedger, settleDesk, type GradedBet } fr
 import { formatAmerican, formatPct } from "@/lib/dfs/markets";
 import type { Game, Player } from "@/lib/dfs/types";
 import { normalizeName, playerSpotLine } from "@/lib/utils";
+import { CyBadge } from "./cy-badge";
 
 function Conf({ n }: { n: number }) {
   const w = Math.max(8, Math.min(100, n));
@@ -65,7 +66,10 @@ function PropCard({ bet, kicker, players, games }: { bet: DeskBet; kicker: strin
         <p className="text-faint text-[10px] tracking-[0.18em] uppercase">{kicker}</p>
         <p className="font-mono text-[11px] text-value tabular-nums">{bet.unit}</p>
       </div>
-      <h3 className="display mt-1 text-2xl leading-none font-semibold">{name}</h3>
+      <h3 className="display mt-1 flex items-center gap-2 text-2xl leading-none font-semibold">
+        {name}
+        <CyBadge cy={player?.contractYear} />
+      </h3>
       <Spot player={player} games={games} />
       <p className="display mt-2 text-lg leading-none font-semibold text-value">{market || bet.title}</p>
       <p className="text-muted-foreground mt-1 text-xs">{bet.line}</p>
@@ -99,7 +103,10 @@ function TdLegCard({
         Leg {i + 1}
         {leg.marketLabel ? ` · ${leg.marketLabel}` : leg.kind === "atd" ? " · ATD" : leg.kind === "multi_td" ? " · 2+ TD" : ""}
       </p>
-      <p className={`display leading-none font-semibold ${compact ? "text-xl" : "text-2xl"}`}>{leg.name}</p>
+      <p className={`display flex items-center gap-2 leading-none font-semibold ${compact ? "text-xl" : "text-2xl"}`}>
+        {leg.name}
+        <CyBadge cy={player?.contractYear} />
+      </p>
       <Spot player={player} games={games} />
       <p className="text-muted-foreground mt-1 font-mono text-xs">
         {formatAmerican(leg.american)}

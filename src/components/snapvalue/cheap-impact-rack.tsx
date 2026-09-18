@@ -1,6 +1,7 @@
 import { BARGAIN_TAKE, CHEAP_IMPACT_POS } from "@/lib/dfs/sleeper";
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { formatPts, playerSpotLine } from "@/lib/utils";
+import { CyBadge } from "./cy-badge";
 
 export function CheapImpactRack({
   data,
@@ -49,7 +50,9 @@ export function CheapImpactRack({
                   onClick={() => onSelect(p)}
                   className="hover:bg-accent flex w-full flex-col rounded-lg px-1 py-1 text-left transition-colors duration-150"
                 >
-                  <span className="truncate text-base font-medium">{p.name}</span>
+                  <span className="flex items-center gap-1.5 truncate text-base font-medium">
+                    {p.name} <CyBadge cy={p.contractYear} />
+                  </span>
                   <span className="text-muted-foreground mt-0.5 text-xs">
                     {playerSpotLine(p, { games: data.games })}
                   </span>

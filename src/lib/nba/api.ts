@@ -1,3 +1,4 @@
+import { applyContractYears, loadNbaContractYears } from "@/lib/contracts";
 import { createServerFn } from "@tanstack/react-start";
 import { normalizeName } from "@/lib/utils";
 import { loadDkDraftables, loadDkGroups, type DkGroup } from "@/lib/dfs/dk";
@@ -10,7 +11,7 @@ import { markNbaBargain } from "./sleeper";
 import { dkFromPerGame, isSidelined, matchupMul, matchupQuality, round1, round2 } from "./scoring";
 import type { NbaBox, NbaPlayer, NbaPos, NbaSlateData, NbaSlateOption, NbaSlateResponse } from "./types";
 
-const CACHE_VER = 3;
+const CACHE_VER = 4;
 type Hit = { at: number; value: NbaSlateResponse };
 const g = globalThis as typeof globalThis & { __snapNbaCache?: Map<string, Hit> };
 function cache() {
@@ -222,17 +223,20 @@ export async function loadNbaSlate(draftGroupId?: number, force?: boolean): Prom
     }
 
     const selected = classic.find((s) => s.draftGroupId === draftGroupId) ?? classic[0]!;
-    const draftablesJson = await loadDkDraftables(selected.draftGroupId);
     const espnFilter = JSON.stringify({
       players: { limit: 400, sortPercOwned: { sortPriority: 1, sortAsc: false } },
     });
-    const espn = await settled(
-      getJson<{ players: EspnRow[] }>(
-        "https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/2026/segments/0/leaguedefaults/1?view=kona_player_info",
-        { headers: { "x-fantasy-filter": espnFilter } },
-        12000,
+    const [draftablesJson, espn, cyIdx] = await Promise.all([
+      loadDkDraftables(selected.draftGroupId),
+      settled(
+        getJson<{ players: EspnRow[] }>(
+          "https://lm-api-reads.fantasy.espn.com/apis/v3/games/fba/seasons/2026/segments/0/leaguedefaults/1?view=kona_player_info",
+          { headers: { "x-fantasy-filter": espnFilter } },
+          12000,
+        ),
       ),
-    );
+      settled(loadNbaContractYears()),
+    ]);
 
     const espnByName = new Map<string, EspnRow["player"]>();
     for (const row of espn?.players ?? []) {
@@ -351,6 +355,7 @@ export async function loadNbaSlate(draftGroupId?: number, force?: boolean): Prom
         itFactorWhy: null,
         cheapImpact: false,
         cheapImpactWhy: null,
+        contractYear: null,
         ownership: null,
         box,
         props,
@@ -361,6 +366,7 @@ export async function loadNbaSlate(draftGroupId?: number, force?: boolean): Prom
     markValues(players);
     markNbaBargain(players);
     markNbaIt(players, games, "all");
+    applyContractYears(players, cyIdx);
 
     const value: NbaSlateData = {
       ok: true,
