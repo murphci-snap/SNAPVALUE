@@ -350,7 +350,7 @@ function NbaShell({
         onPpr={() => onTab("board")}
         refreshing={refreshing}
       />
-      <MatchupStrip games={nba.games} />
+      <MatchupStrip games={nba.games} weather={false} />
       {nba.notice ? (
         <p className="bg-ink/10 text-ink mx-auto max-w-[1440px] px-4 py-2 text-center text-sm lg:px-6">{nba.notice}</p>
       ) : null}
@@ -566,7 +566,7 @@ function Header({
   );
 }
 
-function MatchupStrip({ games }: { games: SlateData["games"] }) {
+function MatchupStrip({ games, weather = true }: { games: SlateData["games"]; weather?: boolean }) {
   if (!games.length) return null;
   return (
     <div className="border-border/60 border-b">
@@ -580,7 +580,7 @@ function MatchupStrip({ games }: { games: SlateData["games"] }) {
               {kickoffLabel(g.startTime)}
               {g.total != null ? ` · O/U ${g.total.toFixed(1)}` : null}
               {g.spread != null ? ` · ${g.homeAbbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : null}
-              {g.isDome ? " · Dome" : g.weather ? ` · ${g.weather.replace(/-/g, " ")}` : null}
+              {weather ? (g.isDome ? " · Dome" : g.weather ? ` · ${g.weather.replace(/-/g, " ")}` : null) : null}
             </p>
             {(g.awayImplied != null || g.homeImplied != null) && (
               <p className="text-faint mt-0.5 font-mono text-[11px] tabular-nums">

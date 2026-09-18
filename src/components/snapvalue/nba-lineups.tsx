@@ -97,7 +97,7 @@ export function NbaLineups({
                     <span className="text-faint w-10 font-mono text-[10px]">{NBA_SLOT_LABEL[lp.slot]}</span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{lp.player.name}</span>
-                      <span className="text-faint block truncate text-[11px]">{playerSpotLine(lp.player, { games: data.games })}</span>
+                      <span className="text-faint block truncate text-[11px]">{playerSpotLine(lp.player, { games: data.games, weather: false })}</span>
                     </span>
                     <span className="w-12 text-right font-mono text-xs">{formatSalary(lp.player.salary)}</span>
                     <button type="button" className="size-9 text-muted-foreground" onClick={() => onToggleLock(lp.player.id)}>

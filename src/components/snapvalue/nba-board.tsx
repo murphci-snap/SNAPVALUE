@@ -146,7 +146,7 @@ export function NbaBoard({
                       <span className="block truncate text-sm">
                         {i + 1}. {p.name}
                       </span>
-                      <span className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games })}</span>
+                      <span className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games, weather: false })}</span>
                     </span>
                     <span className="text-value font-mono text-sm tabular-nums">{p.value.toFixed(2)}</span>
                   </li>
@@ -210,7 +210,7 @@ export function NbaBoard({
                           {p.injury && <Badge variant="warn">{p.injury}</Badge>}
                         </div>
                         <p className="text-muted-foreground text-[11px]">
-                          {p.position} · {playerSpotLine(p, { games: data.games })}
+                          {p.position} · {playerSpotLine(p, { games: data.games, weather: false })}
                         </p>
                       </td>
                       <td className="px-3 font-mono text-xs">{formatSalary(p.salary)}</td>
@@ -278,7 +278,7 @@ function NbaBargain({ data, pos }: { data: NbaSlateData; pos: NbaPos | "ALL" }) 
               ) : (
                 <>
                   <p className="mt-1 truncate text-base font-medium">{p.name}</p>
-                  <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games })}</p>
+                  <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games, weather: false })}</p>
                   <p className="text-value display mt-2 text-2xl font-semibold">{p.value.toFixed(2)}</p>
                   {p.cheapImpactWhy ? <p className="text-ink mt-1 text-xs">{p.cheapImpactWhy}</p> : null}
                 </>
@@ -311,7 +311,7 @@ function NbaIt({ data, pos, lens }: { data: NbaSlateData; pos: NbaPos | "ALL"; l
               {g.players.map((p) => (
                 <li key={p.id}>
                   <p className="truncate text-sm font-medium">{p.name}</p>
-                  <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games })}</p>
+                  <p className="text-muted-foreground text-[11px]">{playerSpotLine(p, { games: data.games, weather: false })}</p>
                   {p.itFactorWhy ? <p className="text-ink mt-1 text-[11px]">{p.itFactorWhy}</p> : null}
                 </li>
               ))}

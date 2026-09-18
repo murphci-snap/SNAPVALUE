@@ -54,6 +54,7 @@ export function playerSpotLine(
   },
   opts?: {
     salary?: boolean;
+    weather?: boolean;
     games?: { homeAbbr: string; awayAbbr: string; name?: string; isDome?: boolean; weather?: string | null }[];
   },
 ): string {
@@ -61,12 +62,13 @@ export function playerSpotLine(
   if (opts?.salary !== false && p.salary != null && p.salary > 0) bits.push(formatSalary(p.salary));
   if (p.opponent) bits.push(`${p.home ? "vs" : "@"} ${p.opponent}`);
   if (p.oppRank != null && p.oppRank > 0) bits.push(`${ordinal(p.oppRank)} vs ${p.position || "POS"}`);
-  const g = opts?.games?.find(
-    (x) => x.homeAbbr === p.team || x.awayAbbr === p.team || Boolean(p.gameName && x.name === p.gameName),
-  );
-  if (g?.isDome) bits.push("Dome");
-  else if (g?.weather) bits.push(g.weather.replace(/-/g, " ").trim());
-  return bits.join(" · ");
+  if (opts?.weather !== false) {
+    const g = opts?.games?.find(
+      (x) => x.homeAbbr === p.team || x.awayAbbr === p.team || Boolean(p.gameName && x.name === p.gameName),
+    );
+    if (g?.isDome) bits.push("Dome");
+    else if (g?.weather) bits.push(g.weather.replace(/-/g, " ").trim());
+  }  return bits.join(" · ");
 }
 
 export function normalizeName(name: string): string {
