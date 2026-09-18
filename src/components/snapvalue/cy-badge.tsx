@@ -29,3 +29,17 @@ export function NameWithCy({
     </span>
   );
 }
+
+export function CyLegend() {
+  return (
+    <p className="text-muted-foreground -mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+      <span
+        className="inline-flex shrink-0 items-center rounded-full bg-[#f0c14b] px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-[#1a1408]"
+        aria-hidden
+      >
+        CY
+      </span>
+      <span>= contract year (final year of deal / UFA after this season)</span>
+    </p>
+  );
+}

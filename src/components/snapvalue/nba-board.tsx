@@ -8,7 +8,7 @@ import { pickNbaIt } from "@/lib/nba/it";
 import { NBA_BARGAIN_POS } from "@/lib/nba/sleeper";
 import type { NbaLens, NbaPos, NbaSlateData } from "@/lib/nba/types";
 import { cn, formatPts, formatSalary, playerSpotLine } from "@/lib/utils";
-import { CyBadge } from "./cy-badge";
+import { CyBadge, CyLegend } from "./cy-badge";
 
 export function NbaBoard({
   data,
@@ -122,6 +122,7 @@ export function NbaBoard({
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search players" />
         </div>
       </div>
+      <CyLegend />
       {lens !== "all" ? (
         <p className="text-muted-foreground -mt-2 text-sm">
           {lens === "cash"

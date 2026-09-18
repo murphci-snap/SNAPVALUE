@@ -11,7 +11,7 @@ import { cashScore, gppScore, isCashPlay, isGppPlay, isSidelined, type BoardLens
 import type { Player, Position, SlateData } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary, playerSpotLine } from "@/lib/utils";
 import { CheapImpactRack } from "./cheap-impact-rack";
-import { CyBadge } from "./cy-badge";
+import { CyBadge, CyLegend } from "./cy-badge";
 import { ItFactorRack } from "./it-factor-rack";
 
 type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name" | "ownership";
@@ -247,6 +247,7 @@ export function PlayerBoard({
           />
         </div>
       </div>
+      <CyLegend />
       <ItFactorRack data={data} pos={pos === "CPT" ? "ALL" : pos} lens={lens} onSelect={setSelected} />
       <CheapImpactRack data={data} pos={pos === "CPT" ? "ALL" : pos} onSelect={setSelected} />
 
