@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { loadSlate } from "@/lib/dfs/api";
+import type { SlateWindow } from "@/lib/dfs/types";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Cache-Control": "public, max-age=30",
 };
+
+const WINDOWS = new Set<SlateWindow>(["main", "sun1", "sunday", "sun4", "mnf", "tnf", "snf"]);
 
 export const Route = createFileRoute("/api/slate")({
   server: {
@@ -16,7 +19,9 @@ export const Route = createFileRoute("/api/slate")({
         const raw = url.searchParams.get("draftGroupId");
         const draftGroupId = raw ? Number(raw) : undefined;
         const force = url.searchParams.get("force") === "1";
-        const data = await loadSlate(Number.isFinite(draftGroupId) ? draftGroupId : undefined, force);
+        const winRaw = url.searchParams.get("window");
+        const window = winRaw && WINDOWS.has(winRaw as SlateWindow) ? (winRaw as SlateWindow) : undefined;
+        const data = await loadSlate(Number.isFinite(draftGroupId) ? draftGroupId : undefined, force, window);
         const headers = {
           ...cors,
           "Cache-Control": data.ok

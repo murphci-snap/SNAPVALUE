@@ -14,6 +14,7 @@ import { CheapImpactRack } from "./cheap-impact-rack";
 import { ItFactorRack } from "./it-factor-rack";
 
 type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name" | "ownership";
+type PosFilter = Position | "ALL" | "CPT";
 
 export function PlayerBoard({
   data,
@@ -28,7 +29,7 @@ export function PlayerBoard({
   onToggleLock: (id: string) => void;
   onToggleExclude: (id: string) => void;
 }) {
-  const [pos, setPos] = useState<Position | "ALL">("ALL");
+  const [pos, setPos] = useState<PosFilter>("ALL");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortKey>("projection");
   const [dir, setDir] = useState<"desc" | "asc">("desc");
@@ -38,10 +39,15 @@ export function PlayerBoard({
   const [selected, setSelected] = useState<Player | null>(null);
   const [tableReady, setTableReady] = useState(false);
   useEffect(() => setTableReady(true), []);
+  useEffect(() => {
+    setPos("ALL");
+    setSelected(null);
+  }, [data.draftGroupId, data.window, data.format]);
 
+  const showdown = data.format === "showdown";
   const boardPlayers = useMemo(
-    () => data.players.filter((p) => p.showdownRole !== "CPT"),
-    [data.players],
+    () => (showdown ? data.players : data.players.filter((p) => p.showdownRole !== "CPT")),
+    [data.players, showdown],
   );
   const posList = useMemo<Position[]>(
     () => (boardPlayers.some((p) => p.position === "K") ? [...POSITIONS, "K"] : [...POSITIONS]),
@@ -51,11 +57,12 @@ export function PlayerBoard({
     () => itIdSet(boardPlayers, data.games, lens),
     [boardPlayers, data.games, lens],
   );
-  const POS_FILTER: Array<Position | "ALL"> = ["ALL", ...posList];
+  const POS_FILTER: PosFilter[] = showdown ? ["ALL", "CPT", ...posList] : ["ALL", ...posList];
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     let list = boardPlayers;
-    if (pos !== "ALL") list = list.filter((p) => p.position === pos);
+    if (pos === "CPT") list = list.filter((p) => p.showdownRole === "CPT");
+    else if (pos !== "ALL") list = list.filter((p) => p.position === pos);
     if (valuesOnly) list = list.filter((p) => p.isValuePlay);
     if (itOnly) list = list.filter((p) => itIds.has(p.id));
     if (lens === "cash") list = list.filter((p) => isCashPlay(p));
@@ -69,11 +76,26 @@ export function PlayerBoard({
       );
     }
     const mul = dir === "desc" ? -1 : 1;
-    const posRank = (p: Position) => POSITIONS.indexOf(p);
+    const posRank = (p: Position) => {
+      const i = POSITIONS.indexOf(p);
+      return i >= 0 ? i : POSITIONS.length;
+    };
     return [...list].sort((a, b) => {
       if (pos === "ALL") {
-        const pd = posRank(a.position) - posRank(b.position);
-        if (pd !== 0) return pd;
+        if (showdown) {
+          const ar = a.showdownRole === "CPT" ? 0 : 1;
+          const br = b.showdownRole === "CPT" ? 0 : 1;
+          if (ar !== br) return ar - br;
+          if (ar === 0) {
+            /* CPT is one ranked pool — don't split by position */
+          } else {
+            const pd = posRank(a.position) - posRank(b.position);
+            if (pd !== 0) return pd;
+          }
+        } else {
+          const pd = posRank(a.position) - posRank(b.position);
+          if (pd !== 0) return pd;
+        }
       }
       if (sort === "name") return mul * a.name.localeCompare(b.name);
       if (sort === "ownership") return mul * ((a.ownership ?? 0) - (b.ownership ?? 0));
@@ -81,15 +103,15 @@ export function PlayerBoard({
       if (lens === "gpp" && sort === "projection") return mul * (gppScore(a) - gppScore(b));
       return mul * ((a[sort] as number) - (b[sort] as number));
     });
-  }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly, lens, itIds]);
+  }, [boardPlayers, pos, q, sort, dir, valuesOnly, itOnly, lens, itIds, showdown]);
 
-  const valueRackPos = pos === "ALL" ? posList : [pos];
+  const valueRackPos = pos === "ALL" || pos === "CPT" ? posList : [pos];
   const rack = useMemo(
-    () =>
-      valueRackPos.map((p) => ({
-        pos: p,
+    () => {
+      const posGroups = valueRackPos.map((p) => ({
+        pos: p as string,
         players: [...boardPlayers]
-          .filter((x) => x.position === p && x.isValuePlay && x.isStarter !== false && !isSidelined(x.injury, x.status))
+          .filter((x) => x.position === p && x.showdownRole !== "CPT" && x.isValuePlay && x.isStarter !== false && !isSidelined(x.injury, x.status))
           .filter((x) => (lens === "cash" ? isCashPlay(x) : lens === "gpp" ? isGppPlay(x) || x.projection >= 14 : true))
           .sort((a, b) => {
             if (lens === "cash") return cashScore(b) - cashScore(a) || b.value - a.value;
@@ -97,8 +119,18 @@ export function PlayerBoard({
             return b.value - a.value || a.valueRank - b.valueRank;
           })
           .slice(0, 4),
-      })),
-    [boardPlayers, pos, posList, lens],
+      }));
+      if (showdown) {
+        const cpt = [...boardPlayers]
+          .filter((x) => x.showdownRole === "CPT" && !isSidelined(x.injury, x.status))
+          .sort((a, b) => b.projection - a.projection || b.value - a.value)
+          .slice(0, 4);
+        if (pos === "CPT") return [{ pos: "CPT", players: cpt }];
+        if (pos === "ALL") return [{ pos: "CPT", players: cpt }, ...posGroups];
+      }
+      return posGroups;
+    },
+    [boardPlayers, pos, posList, lens, showdown, valueRackPos],
   );
 
   function toggleSort(key: SortKey) {
@@ -214,14 +246,8 @@ export function PlayerBoard({
           />
         </div>
       </div>
-      {lens !== "all" && (
-        <p className="text-muted-foreground -mt-2 text-sm">
-          {lens === "cash"
-            ? "Cash · Double Up floors. Chalk is fine. Best Value sorts by floor."
-            : "GPP · Milly leverage. Lower Own%, IT, unique value. Studs stay."}
-        </p>
-      )}      <ItFactorRack data={data} pos={pos} lens={lens} onSelect={setSelected} />
-      <CheapImpactRack data={data} pos={pos} onSelect={setSelected} />
+      <ItFactorRack data={data} pos={pos === "CPT" ? "ALL" : pos} lens={lens} onSelect={setSelected} />
+      <CheapImpactRack data={data} pos={pos === "CPT" ? "ALL" : pos} onSelect={setSelected} />
 
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -304,15 +330,24 @@ export function PlayerBoard({
                 const locked = locks.includes(p.id);
                 const excluded = excludes.includes(p.id);
                 const tone = matchupTone(p.oppQuality, p.oppRank);
-                const showPos = pos === "ALL" && (i === 0 || arr[i - 1]!.position !== p.position);
+                const groupKey = (x: Player) =>
+                  showdown && pos === "ALL" && x.showdownRole === "CPT" ? "CPT" : x.position;
+                const showPos = pos === "ALL" && (i === 0 || groupKey(arr[i - 1]!) !== groupKey(p));
+                const groupLabel = groupKey(p);
+                const groupCount =
+                  groupLabel === "CPT"
+                    ? boardPlayers.filter((x) => x.showdownRole === "CPT").length
+                    : boardPlayers.filter(
+                        (x) => x.position === p.position && x.showdownRole !== "CPT",
+                      ).length;
                 return (
                   <Fragment key={p.id}>
                     {showPos && (
                       <tr className="bg-field">
                         <td colSpan={9} className="px-3 py-2">
-                          <span className="display text-sm font-semibold tracking-wide">{p.position}</span>
+                          <span className="display text-sm font-semibold tracking-wide">{groupLabel}</span>
                           <span className="text-faint ml-2 text-[11px] tracking-wide uppercase">
-                            {data.players.filter((x) => x.position === p.position).length} on slate
+                            {groupCount} on slate
                           </span>
                         </td>
                       </tr>
@@ -332,6 +367,7 @@ export function PlayerBoard({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="truncate font-medium">{p.name}</span>
+                            {p.showdownRole === "CPT" && <Badge variant="hot">CPT</Badge>}
                             {itIds.has(p.id) && <Badge variant="it">IT</Badge>}
                             {p.cheapImpact && <Badge variant="value">Bargain</Badge>}
                             {p.isValuePlay && <Badge variant="value">Value</Badge>}
@@ -340,8 +376,8 @@ export function PlayerBoard({
                             {p.rankingMethod === "props" && <Badge variant="hot">Vegas</Badge>}
                             {p.injury && <Badge variant="warn">{p.injury}</Badge>}
                           </div>
-                          <p className="text-muted-foreground text-[11px]">
-                            {p.position} · {playerSpotLine(p, { games: data.games })}
+          <p className="text-muted-foreground text-[11px]">
+                            {p.showdownRole === "CPT" ? "CPT" : p.position} · {playerSpotLine(p, { games: data.games })}
                           </p>
                         </div>
                       </div>
@@ -391,7 +427,7 @@ export function PlayerBoard({
           </table>
         </div>
         <p className="text-faint px-3 py-2 text-[11px]">
-          Showing {Math.min(filtered.length, 220)} of {filtered.length} · DraftKings Classic $50,000 · rankings use Vegas player props when posted, otherwise the average of Yahoo, CBS Sports, FantasyPros, and public X tape
+          Showing {Math.min(filtered.length, 220)} of {filtered.length} · {showdown ? "DraftKings Showdown CPT 1.5×" : "DraftKings Classic $50,000"} · rankings use Vegas player props when posted, otherwise the average of Yahoo, CBS Sports, FantasyPros, and public X tape
         </p>
       </div>
       ) : (

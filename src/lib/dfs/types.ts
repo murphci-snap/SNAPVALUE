@@ -177,13 +177,19 @@ export interface Player {
   } | null;
 }
 
+export type SlateWindow = "main" | "sun1" | "sunday" | "sun4" | "mnf" | "tnf" | "snf";
+
 export interface SlateOption {
   draftGroupId: number;
   label: string;
   suffix: string;
+  title?: string;
+  subtitle?: string;
   startTime: string;
   gameCount: number;
   format: SlateFormat;
+  window?: SlateWindow;
+  virtual?: boolean;
 }
 
 export interface DataSourceInfo {
@@ -209,6 +215,7 @@ export interface SlateData {
   players: Player[];
   dvp: Record<Position, DefenseProfile[]>;
   sources: DataSourceInfo[];
+  window?: SlateWindow;
   stale?: boolean;
 }
 

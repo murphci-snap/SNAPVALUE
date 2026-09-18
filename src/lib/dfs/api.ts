@@ -20,11 +20,12 @@ import type {
   SlateFormat,
   SlateOption,
   SlateResponse,
+  SlateWindow,
   SourceProjection,
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 34;
+const CACHE_VER = 35;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -118,56 +119,35 @@ function opponentOf(gameName: string, team: string): { opp: string; home: boolea
   return { opp: "FA", home: true };
 }
 
-function slateLabel(g: DkGroup): { label: string; suffix: string } {
-  const raw = (g.startTimeSuffix ?? "").replace(/[()]/g, "").trim();
-  const games = g.games?.length ?? 0;
-  if (!raw) {
-    return { label: games ? `Main (${games} games)` : "Main slate", suffix: "Main" };
-  }
-  return { label: `${raw} · ${games} games`, suffix: raw };
-}
-
-function pickClassicSlates(groups: DkGroup[]): SlateOption[] {
+function isNflGroup(g: DkGroup, contestTypeId: number): boolean {
+  if (g.contestType?.contestTypeId !== contestTypeId) return false;
+  if (g.sportId && g.sportId !== 1) return false;
+  const nfl = (g.leagues ?? []).some((l) => l.leagueAbbreviation === "NFL") || !g.leagues?.length;
+  if (!nfl) return false;
+  const start = Date.parse(g.minStartTime);
   const now = Date.now();
   const weekMs = 8 * 24 * 60 * 60 * 1000;
-  const out: SlateOption[] = [];
-  for (const g of groups) {
-    if (g.contestType?.contestTypeId !== 21) continue;
-    if (g.sportId && g.sportId !== 1) continue;
-    const nfl = (g.leagues ?? []).some((l) => l.leagueAbbreviation === "NFL") || !g.leagues?.length;
-    if (!nfl) continue;
-    const start = Date.parse(g.minStartTime);
-    if (!Number.isFinite(start) || start < now - 12 * 60 * 60 * 1000 || start > now + weekMs) continue;
-    if (g.draftGroupState && !/upcoming|live/i.test(g.draftGroupState)) continue;
-    const { label, suffix } = slateLabel(g);
-    out.push({
-      draftGroupId: g.draftGroupId,
-      label,
-      suffix,
-      startTime: g.minStartTime,
-      gameCount: g.games?.length ?? 0,
-      format: "classic",
-    });
-  }
-  out.sort((a, b) => b.gameCount - a.gameCount || a.startTime.localeCompare(b.startTime));
-  const seen = new Set<string>();
-  return out.filter((s) => {
-    const k = `${s.suffix}-${s.gameCount}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  if (!Number.isFinite(start) || start < now - 12 * 60 * 60 * 1000 || start > now + weekMs) return false;
+  if (g.draftGroupState && !/upcoming|live/i.test(g.draftGroupState)) return false;
+  return true;
 }
 
-function showdownGameName(g: DkGroup): string {
-  const first = Array.isArray(g.games) ? g.games[0] : null;
-  if (first && typeof first === "object" && first && "name" in first) {
-    const n = String((first as { name?: string }).name ?? "").trim();
-    if (n) return n;
-  }
-  const raw = (g.startTimeSuffix ?? "").replace(/[()]/g, "").trim();
-  return raw || "Showdown";
-}
+const CLASSIC_WINDOWS: Array<Extract<SlateWindow, "main" | "sun1" | "sunday" | "sun4">> = [
+  "main",
+  "sun1",
+  "sunday",
+  "sun4",
+];
+
+const CLASSIC_COPY: Record<
+  (typeof CLASSIC_WINDOWS)[number],
+  { title: string; subtitle: string; suffix: string }
+> = {
+  main: { title: "Main", subtitle: "all games", suffix: "Main" },
+  sun1: { title: "1pm Eastern", subtitle: "Sunday 1:00pm ET", suffix: "1pm Eastern" },
+  sunday: { title: "All games Sunday", subtitle: "1pm + 4pm ET", suffix: "All games Sunday" },
+  sun4: { title: "4pm Eastern only", subtitle: "Sunday 4:05/4:25 ET", suffix: "4pm Eastern only" },
+};
 
 /** ET weekday 0=Sun … 6=Sat, hour 0–23. */
 function etKickoff(iso: string): { weekday: number; hour: number } | null {
@@ -185,6 +165,87 @@ function etKickoff(iso: string): { weekday: number; hour: number } | null {
   const weekday = map[wd];
   if (weekday == null || !Number.isFinite(hour)) return null;
   return { weekday, hour };
+}
+
+function kickoffInWindow(iso: string, w: SlateWindow): boolean {
+  const et = etKickoff(iso);
+  if (!et) return false;
+  if (w === "sun1") return et.weekday === 0 && et.hour >= 12 && et.hour <= 14;
+  if (w === "sun4") return et.weekday === 0 && et.hour >= 16 && et.hour <= 17;
+  if (w === "sunday") return et.weekday === 0 && et.hour < 19;
+  if (w === "snf") return et.weekday === 0 && et.hour >= 19;
+  if (w === "tnf") return et.weekday === 4 && et.hour >= 19;
+  if (w === "mnf") return et.weekday === 1 && et.hour >= 19;
+  return true;
+}
+
+function classicWindowOf(g: DkGroup): (typeof CLASSIC_WINDOWS)[number] | null {
+  const suffix = (g.startTimeSuffix ?? "").replace(/[()]/g, "").trim().toLowerCase();
+  if (/\bturbo\b/.test(suffix)) return null;
+  if (/\bprime/.test(suffix)) return null;
+  if (/\bearly\b/.test(suffix) && !/afternoon|late/.test(suffix)) return "sun1";
+  if (/\bafternoon\b/.test(suffix) || /\blate only\b/.test(suffix)) return "sun4";
+
+  const minEt = etKickoff(g.minStartTime);
+  const maxEt = etKickoff(g.maxStartTime ?? g.minStartTime);
+  const games = g.games?.length ?? 0;
+  if (minEt && maxEt && minEt.weekday === 0 && maxEt.weekday === 0 && maxEt.hour < 19) {
+    if (minEt.hour >= 16 && minEt.hour <= 17) return "sun4";
+    if (maxEt.hour <= 14 && games <= 10) return "sun1";
+    return "sunday";
+  }
+  return "main";
+}
+
+function toClassicOption(g: DkGroup, w: (typeof CLASSIC_WINDOWS)[number], virtual: boolean): SlateOption {
+  const copy = CLASSIC_COPY[w];
+  return {
+    draftGroupId: g.draftGroupId,
+    label: `${copy.title} · ${copy.subtitle}`,
+    suffix: copy.suffix,
+    title: copy.title,
+    subtitle: copy.subtitle,
+    startTime: g.minStartTime,
+    gameCount: virtual ? 0 : (g.games?.length ?? 0),
+    format: "classic",
+    window: w,
+    virtual,
+  };
+}
+
+function pickClassicSlates(groups: DkGroup[]): SlateOption[] {
+  const found = new Map<(typeof CLASSIC_WINDOWS)[number], DkGroup>();
+  for (const g of groups) {
+    if (!isNflGroup(g, 21)) continue;
+    const w = classicWindowOf(g);
+    if (!w) continue;
+    const prev = found.get(w);
+    if (!prev || (g.games?.length ?? 0) > (prev.games?.length ?? 0)) found.set(w, g);
+  }
+  if (!found.get("main")) {
+    const largest = groups
+      .filter((g) => isNflGroup(g, 21) && classicWindowOf(g))
+      .sort((a, b) => (b.games?.length ?? 0) - (a.games?.length ?? 0))[0];
+    if (largest) found.set("main", largest);
+  }
+  const main = found.get("main");
+  const out: SlateOption[] = [];
+  for (const w of CLASSIC_WINDOWS) {
+    const g = found.get(w);
+    if (g) out.push(toClassicOption(g, w, false));
+    else if (main && w !== "main") out.push(toClassicOption(main, w, true));
+  }
+  return out;
+}
+
+function showdownGameName(g: DkGroup): string {
+  const first = Array.isArray(g.games) ? g.games[0] : null;
+  if (first && typeof first === "object" && first && "name" in first) {
+    const n = String((first as { name?: string }).name ?? "").trim();
+    if (n) return n;
+  }
+  const raw = (g.startTimeSuffix ?? "").replace(/[()]/g, "").trim();
+  return raw || "Showdown";
 }
 
 function primetimeWindow(iso: string, blob: string): "TNF" | "SNF" | "MNF" | "Sat" | "Fri" | null {
@@ -210,41 +271,62 @@ function primetimeWindow(iso: string, blob: string): "TNF" | "SNF" | "MNF" | "Sa
   return null;
 }
 
+const SHOWDOWN_ORDER: Array<Extract<SlateWindow, "mnf" | "tnf" | "snf">> = ["mnf", "tnf", "snf"];
+const SHOWDOWN_COPY: Record<(typeof SHOWDOWN_ORDER)[number], { title: string; suffix: string }> = {
+  mnf: { title: "Monday Night Football", suffix: "Monday Night Football" },
+  tnf: { title: "Thursday Night", suffix: "Thursday Night" },
+  snf: { title: "Sunday Night", suffix: "Sunday Night" },
+};
+
 function pickShowdownSlates(groups: DkGroup[]): SlateOption[] {
-  const now = Date.now();
-  const weekMs = 8 * 24 * 60 * 60 * 1000;
-  const out: SlateOption[] = [];
+  const found = new Map<(typeof SHOWDOWN_ORDER)[number], DkGroup>();
   for (const g of groups) {
-    if (g.contestType?.contestTypeId !== 96) continue;
-    if (g.sportId && g.sportId !== 1) continue;
-    const nfl = (g.leagues ?? []).some((l) => l.leagueAbbreviation === "NFL") || !g.leagues?.length;
-    if (!nfl) continue;
-    const start = Date.parse(g.minStartTime);
-    if (!Number.isFinite(start) || start < now - 12 * 60 * 60 * 1000 || start > now + weekMs) continue;
-    if (g.draftGroupState && !/upcoming|live/i.test(g.draftGroupState)) continue;
-    const games = g.games?.length ?? 0;
-    if (games > 1) continue;
+    if (!isNflGroup(g, 96)) continue;
+    const nGames = g.games?.length ?? 0;
+    if (nGames > 1) continue;
     const name = showdownGameName(g);
     const blob = `${g.startTimeSuffix ?? ""} ${name}`;
-    const window = primetimeWindow(g.minStartTime, blob);
-    if (!window) continue;
-    const tag = window === "Sat" ? "Sat night" : window === "Fri" ? "Fri night" : window;
+    const tag = primetimeWindow(g.minStartTime, blob);
+    if (tag !== "TNF" && tag !== "SNF" && tag !== "MNF") continue;
+    const w = tag.toLowerCase() as (typeof SHOWDOWN_ORDER)[number];
+    if (!found.has(w)) found.set(w, g);
+  }
+  const out: SlateOption[] = [];
+  for (const w of SHOWDOWN_ORDER) {
+    const g = found.get(w);
+    if (!g) continue;
+    const copy = SHOWDOWN_COPY[w];
+    const name = showdownGameName(g);
     out.push({
       draftGroupId: g.draftGroupId,
-      label: `Showdown · ${tag} · ${name}`,
-      suffix: `${tag} · ${name}`,
+      label: `${copy.title} · ${name}`,
+      suffix: copy.suffix,
+      title: copy.title,
+      subtitle: name,
       startTime: g.minStartTime,
-      gameCount: games || 1,
+      gameCount: g.games?.length || 1,
       format: "showdown",
+      window: w,
+      virtual: false,
     });
   }
-  out.sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const seen = new Set<number>();
-  return out.filter((s) => {
-    if (seen.has(s.draftGroupId)) return false;
-    seen.add(s.draftGroupId);
-    return true;
-  });
+  return out;
+}
+
+function pickSelected(slates: SlateOption[], draftGroupId?: number, window?: SlateWindow): SlateOption {
+  if (window) {
+    const both = slates.find((s) => s.window === window && draftGroupId != null && s.draftGroupId === draftGroupId);
+    if (both) return both;
+    const byWin = slates.find((s) => s.window === window);
+    if (byWin) return byWin;
+  }
+  if (draftGroupId != null) {
+    const real = slates.find((s) => s.draftGroupId === draftGroupId && !s.virtual);
+    if (real) return real;
+    const any = slates.find((s) => s.draftGroupId === draftGroupId);
+    if (any) return any;
+  }
+  return slates.find((s) => s.window === "main") ?? slates.find((s) => s.format === "classic") ?? slates[0]!;
 }
 
 function espnIndex(rows: EspnPlayerRow[]) {
@@ -362,10 +444,18 @@ function compactSlate(value: SlateDataOk): SlateDataOk {
   return next;
 }
 
-export function peekSlate(draftGroupId?: number): SlateResponse | undefined {
+export function peekSlate(draftGroupId?: number, window?: SlateWindow): SlateResponse | undefined {
   const cache = getCache();
-  const hit = cache.get(`slate:${CACHE_VER}:${draftGroupId ?? "auto"}`) ?? cache.get(`slate:${CACHE_VER}:auto`);
-  if (hit && Date.now() - hit.at < REFRESH_MS) return hit.value;
+  const keys = [
+    `slate:${CACHE_VER}:${draftGroupId ?? "auto"}:${window ?? "auto"}`,
+    `slate:${CACHE_VER}:${draftGroupId ?? "auto"}`,
+    `slate:${CACHE_VER}:auto:auto`,
+    `slate:${CACHE_VER}:auto`,
+  ];
+  for (const key of keys) {
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < REFRESH_MS) return hit.value;
+  }
   return undefined;
 }
 
@@ -389,9 +479,13 @@ function markStale(value: SlateDataOk): SlateDataOk {
   return { ...value, stale: true };
 }
 
-async function lastGoodSlate(draftGroupId?: number): Promise<SlateResponse | undefined> {
+async function lastGoodSlate(draftGroupId?: number, window?: SlateWindow): Promise<SlateResponse | undefined> {
   const cache = getCache();
-  const exact = draftGroupId != null ? cache.get(`slate:${CACHE_VER}:${draftGroupId}`) : undefined;
+  const exact =
+    draftGroupId != null
+      ? (cache.get(`slate:${CACHE_VER}:${draftGroupId}:${window ?? "auto"}`) ??
+        cache.get(`slate:${CACHE_VER}:${draftGroupId}`))
+      : undefined;
   if (exact?.value && exact.value.ok) return markStale(exact.value);
   let best: CacheHit | undefined;
   for (const hit of cache.values()) {
@@ -402,7 +496,7 @@ async function lastGoodSlate(draftGroupId?: number): Promise<SlateResponse | und
     const { readLastGood } = await import("./slate-cache.server");
     const disk = readLastGood(draftGroupId);
     if (disk?.value && disk.value.ok) {
-      cache.set(`slate:${CACHE_VER}:${draftGroupId ?? "auto"}`, disk);
+      cache.set(`slate:${CACHE_VER}:${draftGroupId ?? "auto"}:${window ?? "auto"}`, disk);
       return markStale(disk.value);
     }
   } catch {
@@ -411,9 +505,9 @@ async function lastGoodSlate(draftGroupId?: number): Promise<SlateResponse | und
   return undefined;
 }
 
-export async function loadSlate(draftGroupId?: number, force?: boolean): Promise<SlateResponse> {
+export async function loadSlate(draftGroupId?: number, force?: boolean, window?: SlateWindow): Promise<SlateResponse> {
   const cache = getCache();
-  const cacheKey = `slate:${CACHE_VER}:${draftGroupId ?? "auto"}`;
+  const cacheKey = `slate:${CACHE_VER}:${draftGroupId ?? "auto"}:${window ?? "auto"}`;
   const hit = cache.get(cacheKey);
   if (!force && hit && Date.now() - hit.at < REFRESH_MS) return hit.value;
   if (!force) {
@@ -446,18 +540,14 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     const showdowns = pickShowdownSlates(groups);
     const slates = [...classic, ...showdowns];
     if (!slates.length) {
-      const stale = await lastGoodSlate(draftGroupId);
+      const stale = await lastGoodSlate(draftGroupId, window);
       if (stale) return stale;
       const err: SlateResponse = { ok: false, error: "No DraftKings Classic or Showdown slates are posted yet." };
       cache.set(cacheKey, { at: Date.now(), value: err });
       return err;
     }
 
-    const selected =
-      slates.find((s) => s.draftGroupId === draftGroupId) ??
-      slates.find((s) => s.format === "classic" && /wed-mon/i.test(s.suffix)) ??
-      slates.find((s) => s.format === "classic") ??
-      slates[0]!;
+    const selected = pickSelected(slates, draftGroupId, window);
     const format: SlateFormat = selected.format ?? "classic";
 
     const yahooP = withTimeout(loadYahoo(), siteMs, EMPTY_SITE);
@@ -495,7 +585,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
     ]);
 
     const idx = espnIndex(espnJson?.players ?? []);
-    const games: Game[] = (draftablesJson.competitions ?? []).map((c) => {
+    let games: Game[] = (draftablesJson.competitions ?? []).map((c) => {
       const broadcast = c.competitionAttributes?.find((a) => a.typeId === 32)?.value ?? null;
       return {
         id: c.competitionId,
@@ -549,7 +639,7 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       unique.set(`${d.playerId}:${role}`, d);
     }
 
-    const players: Player[] = [];
+    let players: Player[] = [];
     for (const d of unique.values()) {
       const position = d.position as Position;
       const showdownRole = format === "showdown" ? (d.rosterSlotId === 511 ? "CPT" : "FLEX") : null;
@@ -760,6 +850,14 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       players.push(...extras);
     }
 
+    if (selected.virtual && selected.window && selected.format === "classic") {
+      games = games.filter((g) => kickoffInWindow(g.startTime, selected.window!));
+      const teams = new Set(games.flatMap((g) => [g.homeAbbr, g.awayAbbr]));
+      players = players.filter(
+        (p) => kickoffInWindow(p.startTime, selected.window!) || teams.has(p.team),
+      );
+    }
+
     const byTeamPos = new Map<string, Player[]>();
     for (const p of players) {
       const key = `${p.team}|${p.position}`;
@@ -852,24 +950,29 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
       salaryCap: SALARY_CAP,
       slateLabel: selected.label,
       format,
-      slates,
+      slates: slates.map((s) =>
+        s.virtual && s.window === selected.window ? { ...s, gameCount: games.length } : s,
+      ),
       games,
       players: trimmed,
       dvp,
       sources,
+      window: selected.window,
     });
     cache.set(cacheKey, { at: Date.now(), value });
+    cache.set(`slate:${CACHE_VER}:${selected.draftGroupId}:${selected.window ?? "auto"}`, { at: Date.now(), value });
     cache.set(`slate:${CACHE_VER}:${selected.draftGroupId}`, { at: Date.now(), value });
     try {
       const { writeTmpCache } = await import("./slate-cache.server");
       writeTmpCache(cacheKey, value);
+      writeTmpCache(`slate:${CACHE_VER}:${selected.draftGroupId}:${selected.window ?? "auto"}`, value);
       writeTmpCache(`slate:${CACHE_VER}:${selected.draftGroupId}`, value);
     } catch {
       /* client / no fs */
     }
     return value;
   } catch (err) {
-    const stale = await lastGoodSlate(draftGroupId);
+    const stale = await lastGoodSlate(draftGroupId, window);
     if (stale) return stale;
     const raw = err instanceof Error ? err.message : "";
     const error = /403/.test(raw)
@@ -880,6 +983,6 @@ export async function loadSlate(draftGroupId?: number, force?: boolean): Promise
 }
 
 export const getSlate = createServerFn({ method: "GET" })
-  .validator((input: { draftGroupId?: number; force?: boolean } | undefined) => input ?? {})
-  .handler(async ({ data }) => loadSlate(data.draftGroupId, data.force));
+  .validator((input: { draftGroupId?: number; force?: boolean; window?: SlateWindow } | undefined) => input ?? {})
+  .handler(async ({ data }) => loadSlate(data.draftGroupId, data.force, data.window));
 

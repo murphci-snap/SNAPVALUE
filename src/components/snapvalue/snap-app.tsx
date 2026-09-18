@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { REFRESH_MS } from "@/lib/dfs/constants";
 import { kickoffLabel, relativeTime } from "@/lib/dfs/format-ui";
-import type { SlateData, SlateResponse } from "@/lib/dfs/types";
+import type { SlateData, SlateResponse, SlateWindow } from "@/lib/dfs/types";
 import { NBA_REFRESH_MS } from "@/lib/nba/constants";
 import type { NbaSlateData, NbaSlateResponse } from "@/lib/nba/types";
 import { cn } from "@/lib/utils";
@@ -22,10 +22,11 @@ import { PprBoard } from "./ppr-board";
 type Tab = "board" | "lineups" | "pools" | "bets" | "ppr";
 type Sport = "NFL" | "NBA";
 
-async function fetchSlate(draftGroupId?: number, force = false): Promise<SlateResponse> {
+async function fetchSlate(draftGroupId?: number, force = false, window?: SlateWindow): Promise<SlateResponse> {
   const params = new URLSearchParams();
   if (draftGroupId) params.set("draftGroupId", String(draftGroupId));
   if (force) params.set("force", "1");
+  if (window) params.set("window", window);
   const qs = params.toString();
   const res = await fetch(`/api/slate${qs ? `?${qs}` : ""}`, {
     cache: "no-store",
@@ -63,6 +64,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   const initialId = initial?.ok ? initial.draftGroupId : undefined;
   const [sport, setSport] = useState<Sport>("NFL");
   const [draftGroupId, setDraftGroupId] = useState<number | undefined>(initialId);
+  const [slateWindow, setSlateWindow] = useState<SlateWindow | undefined>(initial?.ok ? initial.window : undefined);
   const [nbaGroupId, setNbaGroupId] = useState<number | undefined>();
   const [tab, setTab] = useState<Tab>("board");
   const [locks, setLocks] = useState<string[]>([]);
@@ -90,8 +92,8 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   }
 
   const query = useQuery({
-    queryKey: ["slate", draftGroupId ?? "auto"],
-    queryFn: () => fetchSlate(draftGroupId),
+    queryKey: ["slate", draftGroupId ?? "auto", slateWindow ?? "auto"],
+    queryFn: () => fetchSlate(draftGroupId, false, slateWindow),
     initialData: initial && draftGroupId === initialId ? initial : undefined,
     staleTime: 0,
     refetchOnMount: true,
@@ -147,8 +149,8 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         const next = await fetchNbaSlate(nbaGroupId, true);
         queryClient.setQueryData(["nba-slate", nbaGroupId ?? "auto"], next);
       } else {
-        const next = await fetchSlate(draftGroupId, true);
-        queryClient.setQueryData(["slate", draftGroupId ?? "auto"], next);
+        const next = await fetchSlate(draftGroupId, true, slateWindow);
+        queryClient.setQueryData(["slate", draftGroupId ?? "auto", slateWindow ?? "auto"], next);
       }
     } finally {
       setRefreshing(false);
@@ -215,7 +217,10 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         data={data}
         tab={tab}
         onSport={chooseSport}
-        onSlate={setDraftGroupId}
+        onSlate={(id, w) => {
+          setDraftGroupId(id);
+          setSlateWindow(w);
+        }}
         onRefresh={() => void refresh()}
         onPpr={() => setTab(tab === "ppr" ? "board" : "ppr")}
         refreshing={refreshing || query.isFetching}
@@ -311,7 +316,7 @@ function NbaShell({
   tab: Tab;
   onTab: (t: Tab) => void;
   onSport: (s: Sport) => void;
-  onSlate: (id: number) => void;
+  onSlate: (id: number, window?: SlateWindow) => void;
   onRefresh: () => void;
   refreshing: boolean;
   locks: string[];
@@ -416,16 +421,16 @@ function slateName(suffix: string): string {
   const key = raw.toLowerCase().replace(/\s+/g, " ");
   const names: Record<string, string> = {
     main: "Main",
-    early: "Early",
-    afternoon: "Afternoon",
+    early: "1pm Eastern",
+    afternoon: "4pm Eastern only",
     primetime: "Primetime",
     "prime time": "Primetime",
-    "sun-mon": "Sun–Mon",
-    "thu-mon": "Thu–Mon",
-    "thu-sun": "Thu–Sun",
-    "fri-mon": "Fri–Mon",
-    sun: "Sunday",
-    "sun only": "Sunday",
+    "sun-mon": "Main",
+    "thu-mon": "Main",
+    "thu-sun": "Main",
+    "fri-mon": "Main",
+    sun: "All games Sunday",
+    "sun only": "All games Sunday",
     showdown: "Showdown",
   };
   return names[key] ?? raw.replace(/-/g, "–");
@@ -452,7 +457,7 @@ function Header({
   nba?: NbaSlateData;
   tab: Tab;
   onSport: (s: Sport) => void;
-  onSlate: (id: number) => void;
+  onSlate: (id: number, window?: SlateWindow) => void;
   onRefresh: () => void;
   onPpr: () => void;
   refreshing: boolean;
@@ -466,6 +471,7 @@ function Header({
   }, [fetchedAt]);
   const slates = sport === "NBA" ? nba?.slates ?? [] : data?.slates ?? [];
   const activeId = sport === "NBA" ? nba?.draftGroupId : data?.draftGroupId;
+  const activeWindow = sport === "NBA" ? undefined : data?.window;
   return (
     <header className="border-border/80 border-b">
       <div className="relative overflow-hidden">
@@ -527,12 +533,18 @@ function Header({
         {slates.length ? (
           <div className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:snap-none [&::-webkit-scrollbar]:hidden">
             {slates.map((s) => {
-              const on = s.draftGroupId === activeId;
+              const extra = s as { title?: string; subtitle?: string; window?: SlateWindow };
+              const chipWindow = sport === "NFL" ? extra.window : undefined;
+              const on =
+                s.draftGroupId === activeId &&
+                (sport === "NBA" || (chipWindow ?? "main") === (activeWindow ?? "main"));
+              const title = extra.title || (s.format === "showdown" ? s.suffix : slateName(s.suffix));
+              const subtitle = extra.subtitle || `${s.gameCount} ${s.gameCount === 1 ? "game" : "games"}`;
               return (
                 <button
-                  key={s.draftGroupId}
+                  key={chipWindow ? `${s.draftGroupId}:${chipWindow}` : String(s.draftGroupId)}
                   type="button"
-                  onClick={() => onSlate(s.draftGroupId)}
+                  onClick={() => onSlate(s.draftGroupId, chipWindow)}
                   aria-pressed={on}
                   className={cn(
                     "flex min-h-11 min-w-[9.25rem] shrink-0 snap-start flex-col items-start justify-center rounded-lg px-3 py-2 text-left transition-colors duration-150",
@@ -542,11 +554,11 @@ function Header({
                   <span className="flex items-center gap-1.5">
                     {on ? <Check className="size-3.5 shrink-0" aria-hidden /> : null}
                     <span className="display text-sm leading-none font-semibold tracking-wide">
-                      {s.format === "showdown" ? s.suffix : slateName(s.suffix)}
+                      {title}
                     </span>
                   </span>
                   <span className={cn("mt-1 font-mono text-[11px] tabular-nums", on ? "text-primary-foreground/70" : "text-faint")}>
-                    {s.gameCount} {s.gameCount === 1 ? "game" : "games"}
+                    {subtitle}
                   </span>
                 </button>
               );
