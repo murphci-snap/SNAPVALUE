@@ -60,7 +60,7 @@ export const UFC_331_FALLBACK: Array<{
 ];
 
 /** Scratched Sep 14 2026 — Ortega vs Moicano pulled from 331. Moicano to Oct 31. */
-const UFC_331_SCRATCHED = ["ortega", "moicano"];
+export const UFC_331_SCRATCHED_SEED = ["ortega", "moicano"];
 
 const UFC_331_MAIN_PAIRS: Array<[string, string]> = [
   ["van", "pantoja"],
@@ -102,9 +102,13 @@ function pairHit(a: string, b: string, pairs: Array<[string, string]>): boolean 
   return pairs.some(([x, y]) => (A.includes(x) && B.includes(y)) || (A.includes(y) && B.includes(x)));
 }
 
-export function isUfc331Scratched(name: string): boolean {
+export function isUfc331Scratched(name: string, extra: string[] = []): boolean {
   const n = normalizeName(name);
-  return UFC_331_SCRATCHED.some((s) => n.includes(s));
+  const last = normalizeName(lastNameOf(name));
+  return [...UFC_331_SCRATCHED_SEED, ...extra].some((s) => {
+    const k = normalizeName(s);
+    return Boolean(k) && (n.includes(k) || last === k);
+  });
 }
 
 export function isUfc331Window(iso: string): boolean {
@@ -115,17 +119,29 @@ export function isUfc331Window(iso: string): boolean {
 }
 
 /** Null = not booked on UFC 331 (stale event / pulled bout). */
-export function ufc331CardOf(a: string, b: string): UfcCard | null {
-  if (isUfc331Scratched(a) || isUfc331Scratched(b)) return null;
+export function ufc331CardOf(a: string, b: string, extra: string[] = []): UfcCard | null {
+  if (isUfc331Scratched(a, extra) || isUfc331Scratched(b, extra)) return null;
   if (pairHit(a, b, UFC_331_MAIN_PAIRS)) return "main";
   if (pairHit(a, b, UFC_331_EARLY_PAIRS)) return "early";
   if (pairHit(a, b, UFC_331_PRELIM_PAIRS)) return "prelims";
   return null;
 }
 
-export function isUfc331BookedName(name: string): boolean {
-  if (isUfc331Scratched(name)) return false;
+export function isUfc331BookedName(name: string, extra: string[] = []): boolean {
+  if (isUfc331Scratched(name, extra)) return false;
   const keys = nameKeys(name);
   const pairs = [...UFC_331_MAIN_PAIRS, ...UFC_331_PRELIM_PAIRS, ...UFC_331_EARLY_PAIRS];
   return pairs.some(([x, y]) => keys.includes(x) || keys.includes(y));
+}
+
+export function ufc331RosterKeys(): string[] {
+  return [...new Set([...UFC_331_MAIN_PAIRS, ...UFC_331_PRELIM_PAIRS, ...UFC_331_EARLY_PAIRS].flat().concat(UFC_331_SCRATCHED_SEED))];
+}
+
+export function isUfcFightWeek(now = Date.now()): boolean {
+  return now >= Date.parse("2026-09-12T00:00:00Z") && now <= Date.parse("2026-09-20T12:00:00Z");
+}
+
+export function ufcCacheMs(now = Date.now()): number {
+  return isUfcFightWeek(now) ? 8 * 60 * 1000 : UFC_REFRESH_MS;
 }

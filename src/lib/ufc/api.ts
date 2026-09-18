@@ -11,7 +11,6 @@ import {
   UFC_EVENT_NAME,
   UFC_FIGHTER_SLOT,
   UFC_HEADLINE,
-  UFC_REFRESH_MS,
   UFC_SKIP_CT,
   UFC_SPORT_ID,
   UFC_VENUE,
@@ -19,7 +18,9 @@ import {
   isUfc331Scratched,
   isUfc331Window,
   ufc331CardOf,
+  ufcCacheMs,
 } from "./constants";
+import { loadUfcCardNews } from "./news";
 import { loadUfcFd, matchFdFight, methodProb, type UfcFdFight } from "./lines";
 import { clamp, expectedDk, lastNameOf, parseRecord, removeVigPair, round1, round2 } from "./scoring";
 import type {
@@ -32,7 +33,7 @@ import type {
   UfcSlateResponse,
 } from "./types";
 
-const CACHE_VER = 4;
+const CACHE_VER = 5;
 type Hit = { at: number; value: UfcSlateResponse };
 const g = globalThis as typeof globalThis & { __snapUfcCache?: Map<string, Hit> };
 function cache() {
@@ -278,8 +279,18 @@ function markValues(players: UfcFighter[]) {
 export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Promise<UfcSlateResponse> {
   const store = cache();
   const cacheKey = `ufc:${CACHE_VER}:${draftGroupId ?? "auto"}`;
+  const news = await loadUfcCardNews();
+  const extra = news.scratchedKeys;
   const hit = store.get(cacheKey);
-  if (!force && hit && Date.now() - hit.at < UFC_REFRESH_MS) return hit.value;
+  const ttl = ufcCacheMs();
+  if (!force && hit && Date.now() - hit.at < ttl && hit.value.ok) {
+    const old = hit.value.cardTrust?.scratchedKeys ?? [];
+    const same = [...old].sort().join(",") === [...extra].sort().join(",");
+    if (same) {
+      const cached = { ...hit.value, cardTrust: news, nextRefreshAt: new Date(Date.now() + ttl).toISOString() };
+      return cached;
+    }
+  }
 
   try {
     const [allGroups, espn, fd] = await Promise.all([
@@ -396,9 +407,9 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
     }
     fights.sort((a, b) => a.startTime.localeCompare(b.startTime));
     const booked = fights
-      .filter((f) => isUfc331Window(f.startTime) && !isUfc331Scratched(f.aName) && !isUfc331Scratched(f.bName))
+      .filter((f) => isUfc331Window(f.startTime) && !isUfc331Scratched(f.aName, extra) && !isUfc331Scratched(f.bName, extra))
       .map((f) => {
-        const card = ufc331CardOf(f.aName, f.bName);
+        const card = ufc331CardOf(f.aName, f.bName, extra);
         return card ? { ...f, card } : null;
       })
       .filter((f): f is UfcFight => f != null);
@@ -516,9 +527,9 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
 
     if (uniqueDk.size) {
       for (const d of uniqueDk.values()) {
-        if (isUfc331Scratched(d.displayName) || !isUfc331BookedName(d.displayName)) continue;
+        if (isUfc331Scratched(d.displayName, extra) || !isUfc331BookedName(d.displayName, extra)) continue;
         const gameName = d.competition?.name ?? "";
-        if (isUfc331Scratched(gameName)) continue;
+        if (isUfc331Scratched(gameName, extra)) continue;
         const n = normalizeName(d.displayName);
         const last = normalizeName(d.lastName || lastNameOf(d.displayName));
         const fight = fights.find((f) => {
@@ -575,10 +586,10 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
 
     const kept = players.filter(
       (p) =>
-        isUfc331BookedName(p.name) &&
-        !isUfc331Scratched(p.name) &&
-        !isUfc331Scratched(p.opponent) &&
-        ufc331CardOf(p.name, p.opponent) != null,
+        isUfc331BookedName(p.name, extra) &&
+        !isUfc331Scratched(p.name, extra) &&
+        !isUfc331Scratched(p.opponent, extra) &&
+        ufc331CardOf(p.name, p.opponent, extra) != null,
     );
     players.splice(0, players.length, ...kept);
 
@@ -605,7 +616,7 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
       headline: UFC_HEADLINE,
       venue: espn?.venue || UFC_VENUE,
       fetchedAt: new Date().toISOString(),
-      nextRefreshAt: new Date(Date.now() + UFC_REFRESH_MS).toISOString(),
+      nextRefreshAt: new Date(Date.now() + ttl).toISOString(),
       draftGroupId: selected?.draftGroupId ?? 0,
       salaryCap: UFC_CAP,
       slateLabel: "Main card",
@@ -634,6 +645,14 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
       ],
       notice,
       salariesPosted,
+      cardTrust: {
+        checkedAt: news.checkedAt,
+        trustedSource: news.trustedSource,
+        trustedDate: news.trustedDate,
+        trustedTitle: news.trustedTitle,
+        scratchedKeys: extra,
+        note: news.note,
+      },
     };
     store.set(cacheKey, { at: Date.now(), value });
     return value;

@@ -112,6 +112,14 @@ export interface UfcSlateData {
   notice: string | null;
   salariesPosted: boolean;
   stale?: boolean;
+  cardTrust?: {
+    checkedAt: string;
+    trustedSource: string;
+    trustedDate: string;
+    trustedTitle: string;
+    scratchedKeys: string[];
+    note: string;
+  };
 }
 
 export interface UfcSlateError {

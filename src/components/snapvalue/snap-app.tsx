@@ -567,6 +567,9 @@ function UfcShell({
       {ufc.notice ? (
         <p className="bg-ink/10 text-ink mx-auto max-w-[1440px] px-4 py-2 text-center text-sm lg:px-6">{ufc.notice}</p>
       ) : null}
+      {ufc.cardTrust?.note ? (
+        <p className="text-muted-foreground mx-auto max-w-[1440px] px-4 py-2 text-center text-xs lg:px-6">{ufc.cardTrust.note}</p>
+      ) : null}
       <div className="mx-auto max-w-[1440px] px-4 pb-16 lg:px-6">
         <div className="text-muted-foreground mt-4 flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs tabular-nums">
           <span>
