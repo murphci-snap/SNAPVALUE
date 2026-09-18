@@ -219,13 +219,13 @@ export function UfcBets({ data }: { data: UfcSlateData }) {
       <section>
         <h2 className="display text-2xl font-semibold">Lotto parlay</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          One ticket. Several different fights — dogs or method longshots. Combined price. 0.1u. All legs must hit.
-          Separate from the single lotto tickets.
+          One ticket. 3–4 different fights. Plus-money only. Ranked by model edge vs implied, not biggest plus money.
+          0.1u. All legs must hit. Separate from the single lotto tickets.
         </p>
         {desk.lottoParlay ? (
           <ParlayCard ticket={desk.lottoParlay} kicker={`${desk.lottoParlay.legs.length}-leg lotto parlay`} />
         ) : (
-          <p className="text-muted-foreground text-sm">Need three real dogs on different fights. Empty if the board is all chalk.</p>
+          <p className="text-muted-foreground text-sm">Fewer than three longshots clear the edge floor. Empty beats a junk-dog pile.</p>
         )}
       </section>
 

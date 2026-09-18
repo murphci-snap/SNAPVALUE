@@ -56,67 +56,120 @@ function trifectaUnit(_edge: number, combinedProb: number): string {
   return "0.25u";
 }
 
+function lottoFairWin(p: UfcFighter, opp: UfcFighter | undefined): number | null {
+  let prior: number | null = null;
+  if (p.ml != null && opp?.ml != null) prior = removeVigPair(p.ml, opp.ml).pa;
+  else if (p.ml != null) prior = americanToProb(p.ml);
+  if (prior == null) return null;
+  let fair = prior;
+  const pGames = p.wins + p.losses;
+  if (pGames >= 3 && p.record !== "0-0-0") {
+    const finish = (p.koWins + p.subWins) / Math.max(1, p.wins);
+    fair += clamp((finish - 0.42) * 0.1, -0.04, 0.07);
+    fair += clamp((p.wins / pGames - 0.55) * 0.08, -0.04, 0.05);
+  }
+  const oGames = opp ? opp.wins + opp.losses : 0;
+  if (opp && oGames >= 3 && opp.record !== "0-0-0" && pGames >= 3) {
+    fair += clamp((p.wins / pGames - opp.wins / oGames) * 0.12, -0.06, 0.06);
+  }
+  return clamp(fair, 0.08, 0.78);
+}
+
+function methodProfileFits(p: UfcFighter, kind: "ko" | "sub"): boolean {
+  const wins = Math.max(1, p.wins);
+  if (kind === "ko") return p.koWins >= 2 || p.koWins / wins >= 0.28;
+  return p.subWins >= 1 || p.subWins / wins >= 0.16;
+}
+
 function buildLottoParlay(live: UfcFight[], pool: UfcFighter[]): UfcTrifecta | null {
-  type Cand = UfcTrifectaLeg & { books: string };
-  const byFight = new Map<string, Cand>();
+  const EDGE_FLOOR = 0.04;
+  const BAND_LO = 125;
+  const BAND_HI = 800;
+  type Cand = UfcTrifectaLeg & { books: string; edge: number };
+  const options: Cand[] = [];
+
   for (const p of pool) {
+    if (p.ml == null || p.ml < 100) continue;
     const f = live.find((x) => x.id === p.fightId);
     if (!f) continue;
-    const options: Cand[] = [];
-    if (p.ml != null && p.ml >= 175 && p.winProb < 0.52) {
-      options.push({
-        kind: "ml",
-        fighter: p.name,
-        fightName: f.name,
-        fightId: f.id,
-        line: `${f.name} · ${f.weightClass} · ${f.card}`,
-        american: p.ml,
-        priced: true,
-        model: p.winProb,
-        why: `${formatAmerican(p.ml)} dog. Favorite has to miss.`,
-        books: f.books.join("/") || "FanDuel",
-      });
+    const opp = pool.find((x) => x.fightId === p.fightId && x.id !== p.id);
+    const fair = lottoFairWin(p, opp);
+    const line = `${f.name} · ${f.weightClass} · ${f.card}`;
+    const books = f.books.join("/") || "FanDuel";
+
+    if (fair != null && p.ml != null && p.ml >= BAND_LO && p.ml <= BAND_HI) {
+      const implied = americanToProb(p.ml);
+      const edge = fair - implied;
+      if (edge >= EDGE_FLOOR) {
+        options.push({
+          kind: "ml",
+          fighter: p.name,
+          fightName: f.name,
+          fightId: f.id,
+          line,
+          american: p.ml,
+          priced: true,
+          model: fair,
+          why: `Model ${Math.round(fair * 100)}% vs ${Math.round(implied * 100)}% implied (${formatAmerican(p.ml)}). +${Math.round(edge * 100)} pts.`,
+          books,
+          edge,
+        });
+      }
     }
+
     for (const kind of ["ko", "sub"] as const) {
       const e = methodEdge(p, f, kind);
-      if (e.american == null || e.american < 250 || e.model < 0.09) continue;
+      if (!e.priced || e.american == null) continue;
+      if (e.american < BAND_LO || e.american > BAND_HI) continue;
+      if (!methodProfileFits(p, kind)) continue;
+      if (p.wins + p.losses < 3 || p.record === "0-0-0") continue;
+      const implied = e.market ?? americanToProb(e.american);
+      const winPrior =
+        p.ml != null && opp?.ml != null ? removeVigPair(p.ml, opp.ml).pa : p.ml != null ? americanToProb(p.ml) : null;
+      if (winPrior == null) continue;
+      const wins = Math.max(1, p.wins);
+      const share = kind === "ko" ? p.koWins / wins : p.subWins / wins;
+      let model = winPrior * clamp(share, 0.08, 0.72);
+      if (kind === "ko" && opp && opp.losses >= 2) model += 0.02;
+      if (kind === "sub" && opp && opp.subWins === 0 && opp.wins >= 3) model += 0.02;
+      model = clamp(model, 0.05, 0.42);
+      const edge = model - implied;
+      if (edge < EDGE_FLOOR) continue;
       options.push({
         kind,
         fighter: p.name,
         fightName: f.name,
         fightId: f.id,
-        line: `${f.name} · ${f.weightClass} · ${f.card}`,
+        line,
         american: e.american,
-        priced: e.priced,
-        model: e.model,
-        why: `Method longshot ${formatAmerican(e.american)}. Model ${Math.round(e.model * 100)}%.`,
-        books: f.books.join("/") || "FanDuel",
+        priced: true,
+        model,
+        why: `Model ${Math.round(model * 100)}% vs ${Math.round(implied * 100)}% implied (${formatAmerican(e.american)}). +${Math.round(edge * 100)} pts. ${kind === "ko" ? `${p.koWins} KO` : `${p.subWins} sub`} in ${p.wins} wins.`,
+        books,
+        edge,
       });
     }
-    if (!options.length) continue;
-    options.sort((a, b) => {
-      const dart = (x: Cand) => ((x.american ?? 0) > 700 ? 1 : 0);
-      return dart(a) - dart(b) || (b.american ?? 0) - (a.american ?? 0);
-    });
-    const best = options[0]!;
-    const prev = byFight.get(f.id);
-    if (!prev || (best.american ?? 0) > (prev.american ?? 0)) byFight.set(f.id, best);
   }
-  const cands = [...byFight.values()].filter((c) => c.american != null && c.american >= 175);
-  cands.sort((a, b) => {
-    const band = (x: Cand) => ((x.american ?? 0) >= 180 && (x.american ?? 0) <= 550 ? 0 : 1);
-    return band(a) - band(b) || (b.american ?? 0) - (a.american ?? 0);
-  });
-  const n = cands.length >= 4 ? 4 : cands.length >= 3 ? 3 : 0;
-  if (n < 3) return null;
-  const legs = cands.slice(0, n);
+
+  options.sort((a, b) => b.edge - a.edge || (a.american ?? 9999) - (b.american ?? 9999));
+  const used = new Set<string>();
+  const legs: Cand[] = [];
+  for (const o of options) {
+    if (used.has(o.fightId)) continue;
+    used.add(o.fightId);
+    legs.push(o);
+    if (legs.length >= 4) break;
+  }
+  if (legs.length < 3) return null;
+
   const allPriced = legs.every((l) => l.priced && l.american != null);
   const posted = allPriced ? parlayAmerican(legs.map((l) => l.american!)) : null;
   const modelProb = parlayProb(legs.map((l) => l.model));
   const postedProb = allPriced ? legs.reduce((acc, l) => acc * americanToProb(l.american!), 1) : modelProb;
   const combinedProb = allPriced ? postedProb : modelProb;
   const combinedAmerican = posted ?? probToLongAmerican(combinedProb);
-  const books = [...new Set(legs.flatMap((l) => (l.books ? l.books.split("/") : [])))].filter(Boolean).join("/") || (allPriced ? "FanDuel" : "model");
+  const books = [...new Set(legs.flatMap((l) => (l.books ? l.books.split("/") : [])))].filter(Boolean).join("/") || "FanDuel";
+  const avgEdge = legs.reduce((s, l) => s + l.edge, 0) / legs.length;
   return {
     legs,
     combinedAmerican,
@@ -124,12 +177,10 @@ function buildLottoParlay(live: UfcFight[], pool: UfcFighter[]): UfcTrifecta | n
     unit: "0.1u",
     priced: allPriced,
     books,
-    edge: Math.max(0.03, allPriced ? Math.max(0, modelProb - postedProb) : modelProb),
-    confidence: conf(0.04, allPriced),
-    why: allPriced
-      ? `One ticket. Combined ${formatAmerican(combinedAmerican)}. ${legs.length} different fights — dogs and method longshots, not chalk stacked. All legs must hit.`
-      : `One ticket. Combined ${formatAmerican(combinedAmerican)} is a model lean. All legs must hit.`,
-    tape: "0.1u lotto parlay. Separate from the single lotto tickets. Empty if the board has no real dogs.",
+    edge: avgEdge,
+    confidence: conf(avgEdge, allPriced),
+    why: `Ranked by edge, not longest price. Combined ${formatAmerican(combinedAmerican)}. ${legs.length} fights, avg +${Math.round(avgEdge * 100)} pts vs implied. All legs must hit.`,
+    tape: "0.1u. Plus-EV longshots only (plus-money with a real model edge). Empty if fewer than three legs clear.",
   };
 }
 
