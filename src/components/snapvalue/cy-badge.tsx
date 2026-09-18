@@ -30,6 +30,7 @@ export function NameWithCy({
   );
 }
 
+/** Quiet key under the Players filters. */
 export function CyLegend() {
   return (
     <p className="text-muted-foreground -mt-1 flex flex-wrap items-center gap-1.5 text-xs">
