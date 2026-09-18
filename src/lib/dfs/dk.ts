@@ -41,6 +41,7 @@ export type DkGroup = {
   leagues?: { leagueAbbreviation?: string }[];
   games?: unknown[];
   gameTypeId?: number;
+  featured?: boolean;
 };
 
 type LobbyGroup = {
@@ -93,7 +94,7 @@ function msDate(raw?: string): string {
 }
 
 function lobbyToGroup(g: LobbyGroup): DkGroup {
-  const suffix = (g.ContestStartTimeSuffix || g.DraftGroupTag || "").trim() || null;
+  const suffix = (g.ContestStartTimeSuffix || "").trim() || null;
   const games =
     Array.isArray(g.Games) && g.Games.length
       ? g.Games.map((x) => ({ name: x.Name || x.name || suffix || "" }))
@@ -108,6 +109,7 @@ function lobbyToGroup(g: LobbyGroup): DkGroup {
     games,
     gameTypeId: g.GameTypeId,
     draftGroupState: "Upcoming",
+    featured: /\bfeatured\b/i.test(g.DraftGroupTag ?? ""),
   };
 }
 

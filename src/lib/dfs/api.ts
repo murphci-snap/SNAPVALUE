@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { normalizeName } from "@/lib/utils";
 import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP, SHOWDOWN_POSITIONS } from "./constants";
 import { getJson, settled } from "./http";
-import { loadDkDraftables, loadDkGroups } from "./dk";
+import { loadDkDraftables, loadDkGroups, loadDkLobbyGroups } from "./dk";
 import { markItFactor } from "./it-factor";
 import { markOwnership } from "./ownership";
 import { markCheapImpact } from "./sleeper";
@@ -25,7 +25,7 @@ import type {
   WeekProjection,
 } from "./types";
 
-const CACHE_VER = 36;
+const CACHE_VER = 37;
 type CacheHit = { at: number; value: SlateResponse };
 const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
 function getCache() {
@@ -74,6 +74,7 @@ type DkGroup = {
   leagues?: { leagueAbbreviation?: string }[];
   games?: unknown[];
   gameTypeId?: number;
+  featured?: boolean;
 };
 
 type EspnPlayerRow = {
@@ -132,22 +133,22 @@ function isNflGroup(g: DkGroup, contestTypeId: number): boolean {
   return true;
 }
 
-const CLASSIC_WINDOWS: Array<Extract<SlateWindow, "main" | "sun1" | "sunday" | "sun4">> = [
+const CLASSIC_ORDER: SlateWindow[] = [
   "main",
-  "sun1",
   "sunday",
-  "sun4",
+  "early",
+  "sunmon",
+  "afternoon",
+  "turbo",
+  "primetime",
+  "monthu",
 ];
 
-const CLASSIC_COPY: Record<
-  (typeof CLASSIC_WINDOWS)[number],
-  { title: string; subtitle: string; suffix: string }
-> = {
-  main: { title: "all games", subtitle: "", suffix: "all games" },
-  sun1: { title: "1pm Eastern", subtitle: "Sunday 1:00pm ET", suffix: "1pm Eastern" },
-  sunday: { title: "All games Sunday", subtitle: "1pm + 4pm ET", suffix: "All games Sunday" },
-  sun4: { title: "4pm Eastern only", subtitle: "Sunday 4:05/4:25 ET", suffix: "4pm Eastern only" },
-};
+function canonWindow(w?: SlateWindow): SlateWindow | undefined {
+  if (w === "sun1") return "early";
+  if (w === "sun4") return "afternoon";
+  return w;
+}
 
 /** ET weekday 0=Sun … 6=Sat, hour 0–23. */
 function etKickoff(iso: string): { weekday: number; hour: number } | null {
@@ -167,73 +168,127 @@ function etKickoff(iso: string): { weekday: number; hour: number } | null {
   return { weekday, hour };
 }
 
+function etKickoffLabel(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(new Date(t));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const wd = get("weekday");
+  const hour = get("hour");
+  const min = get("minute");
+  const ap = get("dayPeriod").replace(/\./g, "").toUpperCase();
+  if (!wd || !hour) return "";
+  return `${wd} ${hour}:${min} ${ap} ET`;
+}
+
+function prettySuffix(raw?: string | null): string {
+  const s = (raw ?? "").replace(/[()]/g, "").trim();
+  if (!s) return "";
+  return s.replace(/-/g, "–");
+}
+
 function kickoffInWindow(iso: string, w: SlateWindow): boolean {
   const et = etKickoff(iso);
   if (!et) return false;
-  if (w === "sun1") return et.weekday === 0 && et.hour >= 12 && et.hour <= 14;
-  if (w === "sun4") return et.weekday === 0 && et.hour >= 16 && et.hour <= 17;
-  if (w === "sunday") return et.weekday === 0 && et.hour < 19;
-  if (w === "snf") return et.weekday === 0 && et.hour >= 19;
-  if (w === "tnf") return et.weekday === 4 && et.hour >= 19;
-  if (w === "mnf") return et.weekday === 1 && et.hour >= 19;
+  const win = canonWindow(w) ?? w;
+  if (win === "early" || win === "sun1") return et.weekday === 0 && et.hour >= 12 && et.hour <= 14;
+  if (win === "afternoon" || win === "sun4") return et.weekday === 0 && et.hour >= 16 && et.hour <= 17;
+  if (win === "turbo") return et.weekday === 0 && et.hour === 16;
+  if (win === "sunday") return et.weekday === 0 && et.hour < 19;
+  if (win === "primetime") return (et.weekday === 0 && et.hour >= 19) || (et.weekday === 1 && et.hour >= 19);
+  if (win === "monthu") return (et.weekday === 1 && et.hour >= 19) || (et.weekday === 4 && et.hour >= 19);
+  if (win === "snf") return et.weekday === 0 && et.hour >= 19;
+  if (win === "tnf") return et.weekday === 4 && et.hour >= 19;
+  if (win === "mnf") return et.weekday === 1 && et.hour >= 19;
   return true;
 }
 
-function classicWindowOf(g: DkGroup): (typeof CLASSIC_WINDOWS)[number] | null {
+function classicKind(g: DkGroup): Exclude<SlateWindow, "mnf" | "tnf" | "snf"> | null {
   const suffix = (g.startTimeSuffix ?? "").replace(/[()]/g, "").trim().toLowerCase();
-  if (/\bturbo\b/.test(suffix)) return null;
-  if (/\bprime/.test(suffix)) return null;
-  if (/\bearly\b/.test(suffix) && !/afternoon|late/.test(suffix)) return "sun1";
-  if (/\bafternoon\b/.test(suffix) || /\blate only\b/.test(suffix)) return "sun4";
+  if (/\bearly\b/.test(suffix) && !/afternoon|late/.test(suffix)) return "early";
+  if (/\bturbo\b/.test(suffix)) return "turbo";
+  if (/\bafternoon\b/.test(suffix) || /\blate only\b/.test(suffix)) return "afternoon";
+  if (/\bprime/.test(suffix)) return "primetime";
+  if (/mon\s*[-–]\s*thu/.test(suffix) || /thu\s*[-–]\s*mon/.test(suffix)) return "monthu";
+  if (/sun\s*[-–]\s*mon/.test(suffix)) return "sunmon";
+  if (/thu\s*[-–]\s*mon|wed\s*[-–]\s*mon|thu\s*[-–]\s*sun|fri\s*[-–]\s*mon/.test(suffix)) return "main";
 
   const minEt = etKickoff(g.minStartTime);
   const maxEt = etKickoff(g.maxStartTime ?? g.minStartTime);
   const games = g.games?.length ?? 0;
   if (minEt && maxEt && minEt.weekday === 0 && maxEt.weekday === 0 && maxEt.hour < 19) {
-    if (minEt.hour >= 16 && minEt.hour <= 17) return "sun4";
-    if (maxEt.hour <= 14 && games <= 10) return "sun1";
+    if (minEt.hour >= 16 && games <= 4) return "turbo";
+    if (minEt.hour >= 16) return "afternoon";
+    if (maxEt.hour <= 14 && games <= 10) return "early";
     return "sunday";
   }
+  if (minEt && minEt.weekday === 0 && minEt.hour >= 19 && games <= 3) return "primetime";
+  if (minEt && minEt.weekday === 1 && games <= 3) return "monthu";
   return "main";
 }
 
-function toClassicOption(g: DkGroup, w: (typeof CLASSIC_WINDOWS)[number], virtual: boolean): SlateOption {
-  const copy = CLASSIC_COPY[w];
+function toClassicOption(g: DkGroup, w: SlateWindow, allGames: boolean): SlateOption {
+  const n = g.games?.length ?? 0;
+  const games = `${n} ${n === 1 ? "game" : "games"}`;
+  const suf = prettySuffix(g.startTimeSuffix);
+  if (allGames) {
+    return {
+      draftGroupId: g.draftGroupId,
+      label: suf ? `all games · ${games} · ${suf}` : `all games · ${games}`,
+      suffix: "all games",
+      title: "all games",
+      subtitle: suf ? `${games} · ${suf}` : games,
+      startTime: g.minStartTime,
+      gameCount: n,
+      format: "classic",
+      window: "main",
+      virtual: false,
+    };
+  }
+  const bits = [games];
+  if (suf) bits.push(suf);
+  if (g.featured) bits.push("Featured");
+  const kick = etKickoffLabel(g.minStartTime);
   return {
     draftGroupId: g.draftGroupId,
-    label: copy.subtitle ? `${copy.title} · ${copy.subtitle}` : copy.title,
-    suffix: copy.suffix,
-    title: copy.title,
-    subtitle: copy.subtitle,
+    label: [kick, ...bits].filter(Boolean).join(" · "),
+    suffix: suf || w,
+    title: kick || suf || "Classic",
+    subtitle: bits.join(" · "),
     startTime: g.minStartTime,
-    gameCount: virtual ? 0 : (g.games?.length ?? 0),
+    gameCount: n,
     format: "classic",
     window: w,
-    virtual,
+    virtual: false,
   };
 }
 
 function pickClassicSlates(groups: DkGroup[]): SlateOption[] {
-  const found = new Map<(typeof CLASSIC_WINDOWS)[number], DkGroup>();
+  const found = new Map<SlateWindow, DkGroup>();
   for (const g of groups) {
     if (!isNflGroup(g, 21)) continue;
-    const w = classicWindowOf(g);
+    const w = classicKind(g);
     if (!w) continue;
     const prev = found.get(w);
     if (!prev || (g.games?.length ?? 0) > (prev.games?.length ?? 0)) found.set(w, g);
   }
-  if (!found.get("main")) {
-    const largest = groups
-      .filter((g) => isNflGroup(g, 21) && classicWindowOf(g))
-      .sort((a, b) => (b.games?.length ?? 0) - (a.games?.length ?? 0))[0];
-    if (largest) found.set("main", largest);
-  }
-  const main = found.get("main");
-  const out: SlateOption[] = [];
-  for (const w of CLASSIC_WINDOWS) {
+  const main =
+    found.get("main") ??
+    found.get("sunmon") ??
+    [...found.values()].sort((a, b) => (b.games?.length ?? 0) - (a.games?.length ?? 0))[0];
+  if (!main) return [];
+  const out: SlateOption[] = [toClassicOption(main, "main", true)];
+  for (const w of CLASSIC_ORDER) {
+    if (w === "main") continue;
     const g = found.get(w);
-    if (g) out.push(toClassicOption(g, w, false));
-    else if (main && w !== "main") out.push(toClassicOption(main, w, true));
+    if (!g || g.draftGroupId === main.draftGroupId) continue;
+    out.push(toClassicOption(g, w, false));
   }
   return out;
 }
@@ -271,7 +326,7 @@ function primetimeWindow(iso: string, blob: string): "TNF" | "SNF" | "MNF" | "Sa
   return null;
 }
 
-const SHOWDOWN_ORDER: Array<Extract<SlateWindow, "mnf" | "tnf" | "snf">> = ["mnf", "tnf", "snf"];
+const SHOWDOWN_ORDER: Array<Extract<SlateWindow, "mnf" | "tnf" | "snf">> = ["tnf", "snf", "mnf"];
 const SHOWDOWN_COPY: Record<(typeof SHOWDOWN_ORDER)[number], { title: string; suffix: string }> = {
   mnf: { title: "Monday Night Football", suffix: "Monday Night Football" },
   tnf: { title: "Thursday Night", suffix: "Thursday Night" },
@@ -284,6 +339,8 @@ function pickShowdownSlates(groups: DkGroup[]): SlateOption[] {
     if (!isNflGroup(g, 96)) continue;
     const nGames = g.games?.length ?? 0;
     if (nGames > 1) continue;
+    const start = Date.parse(g.minStartTime);
+    if (Number.isFinite(start) && start < Date.now()) continue;
     const name = showdownGameName(g);
     const blob = `${g.startTimeSuffix ?? ""} ${name}`;
     const tag = primetimeWindow(g.minStartTime, blob);
@@ -314,10 +371,11 @@ function pickShowdownSlates(groups: DkGroup[]): SlateOption[] {
 }
 
 function pickSelected(slates: SlateOption[], draftGroupId?: number, window?: SlateWindow): SlateOption {
-  if (window) {
-    const both = slates.find((s) => s.window === window && draftGroupId != null && s.draftGroupId === draftGroupId);
+  const win = canonWindow(window);
+  if (win) {
+    const both = slates.find((s) => s.window === win && draftGroupId != null && s.draftGroupId === draftGroupId);
     if (both) return both;
-    const byWin = slates.find((s) => s.window === window);
+    const byWin = slates.find((s) => s.window === win);
     if (byWin) return byWin;
   }
   if (draftGroupId != null) {
@@ -327,6 +385,26 @@ function pickSelected(slates: SlateOption[], draftGroupId?: number, window?: Sla
     if (any) return any;
   }
   return slates.find((s) => s.window === "main") ?? slates.find((s) => s.format === "classic") ?? slates[0]!;
+}
+
+function mergeLobbyNfl(api: DkGroup[], lobby: DkGroup[]): DkGroup[] {
+  const byId = new Map<number, DkGroup>();
+  for (const g of api) byId.set(g.draftGroupId, { ...g });
+  for (const g of lobby) {
+    const sport = g.sportId;
+    const nfl = (g.leagues ?? []).some((l) => l.leagueAbbreviation === "NFL") || g.contestType?.sport === "NFL";
+    if (sport && sport !== 1) continue;
+    if (!nfl && g.contestType?.sport && g.contestType.sport !== "NFL") continue;
+    const cur = byId.get(g.draftGroupId);
+    if (!cur) {
+      byId.set(g.draftGroupId, g);
+      continue;
+    }
+    if (g.featured) cur.featured = true;
+    if (!cur.startTimeSuffix && g.startTimeSuffix) cur.startTimeSuffix = g.startTimeSuffix;
+    if ((cur.games?.length ?? 0) === 0 && (g.games?.length ?? 0) > 0) cur.games = g.games;
+  }
+  return [...byId.values()];
 }
 
 function espnIndex(rows: EspnPlayerRow[]) {
@@ -529,15 +607,17 @@ export async function loadSlate(draftGroupId?: number, force?: boolean, window?:
   const siteMs = onVercel ? 6500 : 18000;
 
   try {
-    const [state, groups] = await Promise.all([
+    const [state, groups, lobby] = await Promise.all([
       getJson<{ week: number; season: string; season_type: string }>("https://api.sleeper.app/v1/state/nfl"),
       loadDkGroups(),
+      withTimeout(loadDkLobbyGroups("NFL"), 9000, [] as DkGroup[]),
     ]);
 
     const week = Number(state.week) || 1;
     const season = Number(state.season) || 2026;
-    const classic = pickClassicSlates(groups);
-    const showdowns = pickShowdownSlates(groups);
+    const merged = mergeLobbyNfl(groups, lobby);
+    const classic = pickClassicSlates(merged);
+    const showdowns = pickShowdownSlates(merged);
     const slates = [...classic, ...showdowns];
     if (!slates.length) {
       const stale = await lastGoodSlate(draftGroupId, window);

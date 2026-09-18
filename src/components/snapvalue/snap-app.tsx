@@ -629,17 +629,21 @@ function slateName(suffix: string): string {
   const raw = suffix.replace(/[()]/g, "").trim() || "Main";
   const key = raw.toLowerCase().replace(/\s+/g, " ");
   const names: Record<string, string> = {
-    main: "Main",
-    early: "1pm Eastern",
-    afternoon: "4pm Eastern only",
+    main: "all games",
+    early: "Early Only",
+    afternoon: "Afternoon Only",
     primetime: "Primetime",
     "prime time": "Primetime",
-    "sun-mon": "Main",
-    "thu-mon": "Main",
-    "thu-sun": "Main",
-    "fri-mon": "Main",
-    sun: "All games Sunday",
-    "sun only": "All games Sunday",
+    "sun-mon": "Sun–Mon",
+    "thu-mon": "Thu–Mon",
+    "thu-sun": "Thu–Sun",
+    "fri-mon": "Fri–Mon",
+    "mon-thu": "Mon–Thu",
+    sun: "Featured",
+    "sun only": "Featured",
+    "afternoon turbo": "Afternoon Turbo",
+    "early only": "Early Only",
+    "afternoon only": "Afternoon Only",
     showdown: "Showdown",
   };
   return names[key] ?? raw.replace(/-/g, "–");
@@ -764,7 +768,7 @@ function Header({
                   onClick={() => onSlate(s.draftGroupId, chipWindow)}
                   aria-pressed={on}
                   className={cn(
-                    "flex min-h-11 min-w-[9.25rem] shrink-0 snap-start flex-col items-start justify-center rounded-lg px-3 py-2 text-left transition-colors duration-150",
+                    "flex min-h-11 min-w-[10.5rem] shrink-0 snap-start flex-col items-start justify-center rounded-lg px-3 py-2 text-left transition-colors duration-150",
                     on ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground",
                   )}
                 >

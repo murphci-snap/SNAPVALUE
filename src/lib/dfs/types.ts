@@ -177,7 +177,20 @@ export interface Player {
   } | null;
 }
 
-export type SlateWindow = "main" | "sun1" | "sunday" | "sun4" | "mnf" | "tnf" | "snf";
+export type SlateWindow =
+  | "main"
+  | "sunday"
+  | "early"
+  | "sunmon"
+  | "afternoon"
+  | "turbo"
+  | "primetime"
+  | "monthu"
+  | "mnf"
+  | "tnf"
+  | "snf"
+  | "sun1"
+  | "sun4";
 
 export interface SlateOption {
   draftGroupId: number;

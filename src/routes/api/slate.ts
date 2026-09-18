@@ -8,7 +8,21 @@ const cors = {
   "Cache-Control": "public, max-age=30",
 };
 
-const WINDOWS = new Set<SlateWindow>(["main", "sun1", "sunday", "sun4", "mnf", "tnf", "snf"]);
+const WINDOWS = new Set<SlateWindow>([
+  "main",
+  "sunday",
+  "early",
+  "sunmon",
+  "afternoon",
+  "turbo",
+  "primetime",
+  "monthu",
+  "mnf",
+  "tnf",
+  "snf",
+  "sun1",
+  "sun4",
+]);
 
 export const Route = createFileRoute("/api/slate")({
   server: {
@@ -20,7 +34,9 @@ export const Route = createFileRoute("/api/slate")({
         const draftGroupId = raw ? Number(raw) : undefined;
         const force = url.searchParams.get("force") === "1";
         const winRaw = url.searchParams.get("window");
-        const window = winRaw && WINDOWS.has(winRaw as SlateWindow) ? (winRaw as SlateWindow) : undefined;
+        const aliased =
+          winRaw === "sun1" ? "early" : winRaw === "sun4" ? "afternoon" : winRaw;
+        const window = aliased && WINDOWS.has(aliased as SlateWindow) ? (aliased as SlateWindow) : undefined;
         const data = await loadSlate(Number.isFinite(draftGroupId) ? draftGroupId : undefined, force, window);
         const headers = {
           ...cors,
