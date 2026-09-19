@@ -24,10 +24,16 @@ export function teamWinProb(game: Game, abbr: string): number | null {
   return null;
 }
 
-/** Estimated survivor/loser pool share from a chalk curve — not raw win%. */
-export function poolPickPct(rate: number, kind: "survivor" | "loser" = "survivor"): number {
+/** Estimated survivor/loser pool share from a chalk curve — not raw win%.
+ *  `steep` > 1 concentrates share on chalk (large pools); < 1 softens it. */
+export function poolPickPct(
+  rate: number,
+  kind: "survivor" | "loser" = "survivor",
+  steep = 1,
+): number {
   const center = kind === "survivor" ? 0.72 : 0.7;
-  const raw = 1 / (1 + Math.exp(-(rate - center) * 16));
+  const k = 16 * Math.max(0.5, Math.min(2, steep));
+  const raw = 1 / (1 + Math.exp(-(rate - center) * k));
   return clamp(raw * (kind === "survivor" ? 0.5 : 0.46), 0.02, 0.52);
 }
 
