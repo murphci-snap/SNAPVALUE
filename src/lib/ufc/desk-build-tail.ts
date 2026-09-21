@@ -1,20 +1,12 @@
-import { americanToProb } from "@/lib/dfs/scoring";
-import { formatAmerican, parlayProb } from "@/lib/dfs/markets";
+import { formatAmerican } from "@/lib/dfs/markets";
 import { methodLabel, removeVigN, removeVigPair } from "./scoring";
-import type { UfcBet, UfcFight, UfcFighter, UfcMethod, UfcTrifecta, UfcTrifectaLeg } from "./types";
+import type { UfcBet, UfcMethod } from "./types";
 import { cardMethodTape, distanceTape } from "./desk-tape";
 import {
   bet,
   buildLottoParlay,
-  byFight,
-  careerLine,
-  conf,
   distanceModel,
   methodEdge,
-  parlayAmerican,
-  parlayPick,
-  probToLongAmerican,
-  trifectaUnit,
   unitFor,
   type UfcDesk,
 } from "./desk-helpers";
@@ -210,4 +202,3 @@ export function buildDeskTail(s: DeskHeadState): UfcDesk {
     oddsOk,
   };
 }
-
