@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ledgerSummary, loadLedger, type GradedBet } from "@/lib/dfs/bet-ledger";
+import { emptyGradeHint, ledgerSummary, loadLedger, loadStampedBets, type GradedBet } from "@/lib/dfs/bet-ledger";
 import { formatAmerican } from "@/lib/dfs/markets";
 import { buildUfcDesk, publishedUfcBets } from "@/lib/ufc/desk";
 import { settleUfcBets } from "@/lib/ufc/grade";
@@ -148,7 +148,13 @@ export function UfcBets({ data }: { data: UfcSlateData }) {
             {open ? "Hide card" : "This card’s grades"}
           </button>
         ) : (
-          <p className="text-muted-foreground mt-2 text-xs">Grades when the fight is final. Empty slots stay empty. Same ledger as NFL.</p>
+          <p className="text-muted-foreground mt-2 text-xs">
+            {emptyGradeHint({
+              sport: "UFC",
+              stampedCount: loadStampedBets({ sport: "UFC", eventId: data.eventId, season: 2026 }).length,
+              gradedCount: rec.weekRows.length,
+            }) || "Grades when the fight is final. Empty slots stay empty. Same ledger as NFL."}
+          </p>
         )}
         {open ? (
           <ol className="mt-3 flex flex-col gap-1.5">
