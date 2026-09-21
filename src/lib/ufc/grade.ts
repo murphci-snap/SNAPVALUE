@@ -1,12 +1,14 @@
 import {
-  loadStampedBets,
-  maybeStampUfcDesk,
   parseUnits,
   recordSettledBets,
   type GradeResult,
   type GradedBet,
-  type StampedBet,
 } from "@/lib/dfs/bet-ledger";
+import {
+  loadStampedBets,
+  maybeStampUfcDesk,
+  type StampedBet,
+} from "@/lib/dfs/bet-stamp";
 import type { UfcBet, UfcFight } from "./types";
 
 function pnlOf(result: GradeResult, unit: number): number {
