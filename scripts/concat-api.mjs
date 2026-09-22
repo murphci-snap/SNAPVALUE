@@ -35,5 +35,18 @@ if (b64Parts.length) {
   console.error("concat-api: no parts in", partsDir);
   process.exit(1);
 }
+
+// Week 3 pack B: script/usage bump after ownership, before IT Factor (keeps monolith b64 pristine).
+if (!body.includes("applyWeek3ClientBump")) {
+  body = body.replace(
+    'import { markItFactor } from "./it-factor";',
+    'import { markItFactor } from "./it-factor";\nimport { applyWeek3ClientBump } from "./usage-blend";',
+  );
+  body = body.replace(
+    "markOwnership(players);\n    markItFactor(players, games);",
+    "markOwnership(players);\n    applyWeek3ClientBump(players, games);\n    markItFactor(players, games);",
+  );
+}
+
 writeFileSync(out, body);
 console.log("concat-api: wrote", out, body.length, "bytes");
