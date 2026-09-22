@@ -1,1 +1,1 @@
-file:///home/box/.cursor/projects/workspace/agent-tools/2d63f0b6-b021-4a10-8eb9-95366463c782.txt
+PLACEHOLDER_READ_FROM_/tmp/cou-pool-studio.json
