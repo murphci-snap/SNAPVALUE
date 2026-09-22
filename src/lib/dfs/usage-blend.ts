@@ -1,5 +1,6 @@
 import { S } from "./constants";
-import type { Game, Position } from "./types";
+import { isSidelined } from "./scoring";
+import type { Game, Player, Position } from "./types";
 
 export type RecentUsage = { avgPts: number; avgTouches: number; weeks: number };
 
@@ -101,4 +102,41 @@ export function haircutLowSnapChalk(
   if (usage.avgTouches > 0 && usage.avgTouches < touchFloor * 0.72) return projection * 0.9;
   if (usage.avgPts > 0 && usage.avgPts < opts.fppg * 0.55 && opts.fppg >= 10) return projection * 0.92;
   return projection;
+}
+
+/**
+ * Post-hydrate week-3 script + chalk haircut when multi-week ESPN stats are not on the Player.
+ * Uses fppg as a usage proxy; full blendRecentUsage still belongs in api espnStats path when wired.
+ */
+export function applyWeek3ClientBump(players: Player[], games: Game[]): void {
+  for (const p of players) {
+    const sidelined = isSidelined(p.injury, p.status);
+    if (sidelined || p.position === "DST") continue;
+    let projection = p.projection;
+    projection = applyScriptBump(projection, {
+      sidelined,
+      position: p.position,
+      team: p.team,
+      home: p.home,
+      games,
+    });
+    const usage: RecentUsage = {
+      avgPts: p.fppg > 0 ? p.fppg : 0,
+      avgTouches: 0,
+      weeks: p.fppg >= 4 ? 2 : 0,
+    };
+    projection = haircutLowSnapChalk(projection, usage, {
+      sidelined,
+      position: p.position,
+      salary: p.salary,
+      fppg: p.fppg,
+    });
+    if (p.salary >= 8500 && p.ownership != null && p.ownership >= 22 && p.fppg > 0 && p.projection > p.fppg * 1.15) {
+      projection *= 0.97;
+    }
+    if (Math.abs(projection - p.projection) > 0.05) {
+      p.projection = Math.round(projection * 10) / 10;
+      if (p.salary > 0) p.value = Math.round((p.projection / (p.salary / 1000)) * 100) / 100;
+    }
+  }
 }
