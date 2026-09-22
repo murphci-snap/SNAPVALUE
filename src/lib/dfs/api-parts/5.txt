@@ -27,5 +27,5 @@
 }
 
 export const getSlate = createServerFn({ method: "GET" })
-  .validator((input: { draftGroupId?: number; force?: boolean; window?: LatteWindow } | undefined) => input ?? {})
+  .validator((input: { draftGroupId?: number; force?: boolean; window?: SlateWindow } | undefined) => input ?? {})
   .handler(async ({ data }) => loadSlate(data.draftGroupId, data.force, data.window));
