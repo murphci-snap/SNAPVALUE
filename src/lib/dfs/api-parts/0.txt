@@ -1,0 +1,152 @@
+import { applyContractYears, loadNflContractYears } from "@/lib/contracts";
+import { createServerFn } from "@tanstack/react-start";
+import { normalizeName } from "@/lib/utils";
+import { ESPN_POS, ESPN_TEAMS, POSITIONS, REFRESH_MS, SALARY_CAP, SHOWDOWN_POSITIONS } from "./constants";
+import { getJson, settled } from "./http";
+import { loadDkDraftables, loadDkGroups, loadDkLobbyGroups } from "./dk";
+import { markItFactor } from "./it-factor";
+import { markOwnership } from "./ownership";
+import { markCheapImpact } from "./sleeper";
+import { applyGameLines, loadProps, lookupProps } from "./props";
+import { loadCbs, loadFantasyProsEcr, loadSleeper, loadYahoo, lookupSite } from "./projections";
+import { dkFromProps, dkFromWeek, emptyWeek, fillWeek, isQuestionable, isSidelined, matchupMultiplier, propsBlendWeight, Q_HAIRCUT, robustSiteConsensus, round1, round2, seasonFromEspn, weekFromEspn } from "./scoring";
+import type {
+  DataSourceInfo,
+  DefenseProfile,
+  Game,
+  MatchupQuality,
+  Player,
+  Position,
+  RankingMethod,
+  SlateFormat,
+  SlateOption,
+  SlateResponse,
+  SlateWindow,
+  SourceProjection,
+  WeekProjection,
+} from "./types";
+
+const CACHE_VER = 39;
+type CacheHit = { at: number; value: SlateResponse };
+const g = globalThis as typeof globalThis & { __snapvalueCache?: Map<string, CacheHit> };
+function getCache() {
+  if (!g.__snapvalueCache) g.__snapvalueCache = new Map();
+  return g.__snapvalueCache;
+}
+
+type DkDraftable = {
+  playerId: number;
+  playerDkId: number;
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  shortName: string;
+  position: string;
+  rosterSlotId: number;
+  salary: number;
+  status?: string;
+  newsStatus?: string;
+  playerImage160?: string;
+  teamAbbreviation: string;
+  competition?: { competitionId: number; name: string; startTime: string };
+  draftStatAttributes?: { id: number; value: string; sortValue?: string; quality?: string }[];
+  playerAttributes?: { name: string; value: string }[];
+};
+
+type DkCompetition = {
+  competitionId: number;
+  name: string;
+  startTime: string;
+  venue?: string;
+  weather?: { icon?: string; isDome?: boolean };
+  homeTeam?: { abbreviation: string; teamName: string };
+  awayTeam?: { abbreviation: string; teamName: string };
+  competitionAttributes?: { typeId: number; value: string }[];
+};
+
+type DkGroup = {
+  draftGroupId: number;
+  startTimeSuffix?: string | null;
+  minStartTime: string;
+  maxStartTime?: string;
+  draftGroupState?: string;
+  contestType?: { contestTypeId: number; sport?: string };
+  sportId?: number;
+  leagues?: { leagueAbbreviation?: string }[];
+  games?: unknown[];
+  gameTypeId?: number;
+  featured?: boolean;
+};
+
+type EspnPlayerRow = {
+  player?: {
+    id: number;
+    fullName: string;
+    firstName: string;
+    lastName: string;
+    defaultPositionId: number;
+    proTeamId: number;
+    injuryStatus?: string;
+    stats?: {
+      appliedTotal?: number;
+      scoringPeriodId: number;
+      seasonId: number;
+      statSourceId: number;
+      statSplitTypeId: number;
+      stats?: Record<string, number>;
+    }[];
+  };
+};
+
+function parseQuality(q?: string): MatchupQuality {
+  if (q === "High" || q === "Medium" || q === "Low") return q;
+  return "Unknown";
+}
+
+function opponentOf(gameName: string, team: string): { opp: string; home: boolean } {
+  const parts = gameName.split(/\s+/);
+  const at = parts.indexOf("@");
+  if (at > 0 && parts[0] && parts[2]) {
+    const away = parts[0];
+    const home = parts[2];
+    if (team === home) return { opp: away, home: true };
+    if (team === away) return { opp: home, home: false };
+  }
+  const vs = gameName.replace(/\s/g, "");
+  const [a, b] = vs.split("@");
+  if (a && b) {
+    if (team === b) return { opp: a, home: true };
+    if (team === a) return { opp: b, home: false };
+  }
+  return { opp: "FA", home: true };
+}
+
+function isNflGroup(g: DkGroup, contestTypeId: number): boolean {
+  if (g.contestType?.contestTypeId !== contestTypeId) return false;
+  if (g.sportId && g.sportId !== 1) return false;
+  const nfl = (g.leagues ?? []).some((l) => l.leagueAbbreviation === "NFL") || !g.leagues?.length;
+  if (!nfl) return false;
+  const start = Date.parse(g.minStartTime);
+  const now = Date.now();
+  const weekMs = 8 * 24 * 60 * 60 * 1000;
+  if (!Number.isFinite(start) || start < now - 12 * 60 * 60 * 1000 || start > now + weekMs) return false;
+  if (g.draftGroupState && !/upcoming|live/i.test(g.draftGroupState)) return false;
+  return true;
+}
+
+const CLASSIC_ORDER: SlateWindow[] = [
+  "main",
+  "sunday",
+  "early",
+  "sunmon",
+  "afternoon",
+  "turbo",
+  "primetime",
+  "monthu",
+];
+
+function canonWindow(w?: LatteWindow): SlateWindow | undefined {
+  if (w === "sun1") return "early";
+  if (w === "sun4") return "afternoon";
+  return w;
+}
