@@ -199,11 +199,6 @@ export function scoreLoser(
   if (style === "chalk") s = lose;
   if (style === "value") s = lose - (lose > 0.78 ? 0.08 : 0);
   if (style === "ladder") s = lose;
-  if (style !== "chalk") {
-    /* keep value/ladder/contrarian below */
-  }
-  if (style === "value") s = lose - (lose > 0.78 ? 0.08 : 0);
-  if (style === "ladder") s = lose;
   if (style === "contrarian") {
     const sweet = 1 - Math.abs(lose - 0.62) * 2;
     s = sweet * 0.5 + lose * 0.5;
