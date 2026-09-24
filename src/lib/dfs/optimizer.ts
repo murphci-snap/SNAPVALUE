@@ -8,11 +8,23 @@ import { type ContestStyle } from "./optimizer-shared";
 import { buildOne } from "./optimizer-build";
 import { generateShowdownLineups } from "./optimizer-showdown";
 
+export type GenerateLineupOpts = {
+  stackQb?: boolean;
+  locks?: string[];
+  excludes?: string[];
+  contest?: ContestStyle;
+  format?: SlateFormat;
+  /** Prefer / require QB + pass-catcher from this team when stacking. */
+  forceStackTeam?: string;
+  /** Max share of generated lineups a player may appear in (0–1). */
+  maxExposure?: number;
+};
+
 export function generateLineups(
   players: Player[],
   count: number,
   seed: number,
-  opts?: { stackQb?: boolean; locks?: string[]; excludes?: string[]; contest?: ContestStyle; format?: SlateFormat },
+  opts?: GenerateLineupOpts,
 ): Lineup[] {
   if (opts?.format === "showdown" || players.some((p) => p.showdownRole === "CPT")) {
     return generateShowdownLineups(players, count, seed, opts);
@@ -21,6 +33,9 @@ export function generateLineups(
   const contest = opts?.contest ?? "single";
   const lockIds = new Set(opts?.locks ?? []);
   const exclude = new Set(opts?.excludes ?? []);
+  const forceStackTeam = opts?.forceStackTeam?.trim() || undefined;
+  const maxExposure = opts?.maxExposure != null && opts.maxExposure > 0 && opts.maxExposure < 1 ? opts.maxExposure : undefined;
+  const maxAppear = maxExposure != null ? Math.max(1, Math.ceil(count * maxExposure)) : undefined;
   const rng = mulberry32(seed);
 
   const qbFloor = contest === "doubleup" ? 14 : contest === "small" ? 12 : contest === "milly" ? 7 : 8;
@@ -42,20 +57,28 @@ export function generateLineups(
 
   const results: Lineup[] = [];
   const seen = new Set<string>();
+  const exposure = new Map<string, number>();
   let attempts = 0;
   const valueRate = contest === "milly" ? 0.55 : contest === "doubleup" ? 0.02 : contest === "small" ? 0.1 : 0.32;
 
-  while (results.length < count && attempts < count * 48) {
+  while (results.length < count && attempts < count * 64) {
     attempts++;
     const valueLean = rng() < valueRate;
-    const built = buildOne(pool, locks, rng, { stackQb, valueLean, contest });
+    const built = buildOne(pool, locks, rng, { stackQb, valueLean, contest, forceStackTeam });
     if (!built) continue;
     const key = built.players
       .map((lp) => lp.player.id)
       .sort()
       .join("|");
     if (seen.has(key)) continue;
+    if (maxAppear != null) {
+      const over = built.players.some((lp) => (exposure.get(lp.player.id) ?? 0) >= maxAppear);
+      if (over) continue;
+    }
     seen.add(key);
+    for (const lp of built.players) {
+      exposure.set(lp.player.id, (exposure.get(lp.player.id) ?? 0) + 1);
+    }
     built.id = `L${results.length + 1}`;
     results.push(built);
   }
