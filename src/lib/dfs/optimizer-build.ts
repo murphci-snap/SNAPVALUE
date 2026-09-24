@@ -12,12 +12,13 @@ export function buildOne(
   pool: Player[],
   locks: Player[],
   rng: () => number,
-  opts: { stackQb: boolean; valueLean: boolean; contest: ContestStyle },
+  opts: { stackQb: boolean; valueLean: boolean; contest: ContestStyle; forceStackTeam?: string },
 ): Lineup | null {
   const used = new Set<string>();
   const chosen: { slot: RosterSlot; player: Player }[] = [];
   let salary = 0;
   const contest = opts.contest;
+  const forceTeam = opts.forceStackTeam?.trim() || undefined;
 
   const lockByPos: Partial<Record<Position, Player[]>> = {};
   for (const p of locks) {
@@ -64,13 +65,22 @@ export function buildOne(
       });
 
       if (slot.slot === "QB" && candidates.length) {
-        const starters = candidates.filter((p) => p.salary >= 4500 || p.projection >= 12);
+        let starters = candidates.filter((p) => p.salary >= 4500 || p.projection >= 12);
+        if (forceTeam) {
+          const forced = starters.filter((p) => p.team === forceTeam);
+          if (forced.length) starters = forced;
+          else {
+            const any = candidates.filter((p) => p.team === forceTeam);
+            if (any.length) starters = any;
+          }
+        }
         if (starters.length) candidates = starters;
       }
 
       if (opts.stackQb && qb && (slot.slot.startsWith("WR") || slot.slot === "TE" || slot.slot === "FLEX")) {
-        const stack = candidates.filter((p) => p.team === qb!.team && p.position !== "RB");
-        const rate = slot.slot === "FLEX" ? stackFlex : stackWr;
+        const stackTeam = forceTeam && qb.team === forceTeam ? forceTeam : qb.team;
+        const stack = candidates.filter((p) => p.team === stackTeam && p.position !== "RB");
+        const rate = forceTeam && qb.team === forceTeam ? 1 : slot.slot === "FLEX" ? stackFlex : stackWr;
         if (stack.length && rng() < rate) candidates = stack;
         else if (bringBack && qb && rng() < bringBack) {
           const back = candidates.filter((p) => p.opponent === qb!.team && p.position !== "QB");
