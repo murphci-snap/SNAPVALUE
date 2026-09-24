@@ -59,6 +59,9 @@ export interface WeeklyDesk {
   sources: string[];
   remainingOnly: boolean;
   tightenNotes: string[];
+  /** Sat–Mon ET: Lock / Best bets floors eased so the desk still posts a card. */
+  weekendEase: boolean;
+  easeNote: string | null;
 }
 
 export interface DeskTighten {
@@ -189,8 +192,23 @@ function atsUnit(edge: number): string {
   return "0.25u";
 }
 
-const ATS_FLOOR = 0.075;
+const ATS_FLOOR_STRICT = 0.075;
+const ATS_FLOOR_WEEKEND = 0.055;
+const TOTAL_EDGE_STRICT = 0.085;
+const TOTAL_EDGE_WEEKEND = 0.07;
 const ML_FLOOR = 0.07;
+
+const WEEKEND_EASE_NOTE =
+  "Saturday ease — Lock / Best bets floors are loosened so you still get a card. Not the midweek lock bar.";
+
+/** Sat / Sun / Mon in America/New_York — ease Lock & Best bets after midweek stay-strict. */
+export function isWeekendDeskEase(now = new Date()): boolean {
+  const wd = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(now);
+  return wd === "Sat" || wd === "Sun" || wd === "Mon";
+}
 
 function scoreAts(game: Game, players: Player[], floor: number): { side: "home" | "away"; edge: number; why: string } | null {
   if (game.spread == null) return null;
@@ -246,22 +264,24 @@ function scoreTotal(
   players: Player[],
   overAdd: number,
   underAdd: number,
+  weekendEase = false,
 ): { pick: "over" | "under"; edge: number; why: string; expected: number } | null {
   if (game.total == null) return null;
   const posted = game.total;
   const { expected, market, tdNote } = expectedTotal(game, players);
   const gap = expected - posted;
-  const overGate = 2.4 + overAdd;
-  const underGate = 1.9 + underAdd;
+  const overGate = (weekendEase ? 2.0 : 2.4) + overAdd;
+  const underGate = (weekendEase ? 1.6 : 1.9) + underAdd;
+  const minEdge = weekendEase ? TOTAL_EDGE_WEEKEND : TOTAL_EDGE_STRICT;
   if (gap >= overGate) {
     const edge = Math.min(0.12, gap / 16);
-    if (edge < 0.085) return null;
+    if (edge < minEdge) return null;
     const why = `Implied total ${market?.toFixed(1) ?? "n/a"} vs posted ${posted}. Model ${expected.toFixed(1)}.${game.isDome ? " Dome." : ""}${tdNote ? ` ${tdNote}` : ""}`;
     return { pick: "over", edge, why, expected };
   }
   if (gap <= -underGate) {
     const edge = Math.min(0.12, Math.abs(gap) / 16);
-    if (edge < 0.085) return null;
+    if (edge < minEdge) return null;
     const wx = weatherUnderBias(game);
     const why = `Posted ${posted} sits above implied ${market?.toFixed(1) ?? expected.toFixed(1)}. Model ${expected.toFixed(1)}${wx ? " after outdoor weather" : ""}.${tdNote ? ` ${tdNote}` : ""}`;
     return { pick: "under", edge, why, expected };
@@ -440,6 +460,8 @@ function gameOfPlayer(p: Player, games: Game[]): Game | undefined {
 }
 
 export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskTighten = NO_TIGHTEN): WeeklyDesk {
+  const weekendEase = isWeekendDeskEase();
+  const atsFloor = (weekendEase ? ATS_FLOOR_WEEKEND : ATS_FLOOR_STRICT) + tighten.atsAdd;
   const live = games.filter((g) => isUpcoming(g));
   const remainingOnly = games.some((g) => !isUpcoming(g));
   const liveTeams = new Set(live.flatMap((g) => [g.homeAbbr, g.awayAbbr]));
@@ -457,10 +479,16 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
   const totals: DeskBet[] = [];
 
   for (const g of live) {
-    const a = scoreAts(g, board, ATS_FLOOR + tighten.atsAdd);
+    const a = scoreAts(g, board, atsFloor);
     if (a) {
       const team = a.side === "home" ? g.homeAbbr : g.awayAbbr;
       const spread = a.side === "home" ? g.spread! : -g.spread!;
+      const baseTape =
+        Math.abs(spread) >= 7
+          ? "Heavy public favorite for spreads and survivor. Only lean this side if anytime-TD / scoring prices also back a cover — not just the spread."
+          : Math.abs(spread) <= 3
+            ? "Short favorites get bet just because the number looks small. Only take it if the matchup or TD prices actually disagree with the market."
+            : "Mid-range number — books and public usually split. Lean it only with a real mismatch.";
       ats.push({
         id: `ats-${g.id}`,
         title: `${team} ${formatSpread(spread)}`,
@@ -468,21 +496,20 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
         pick: `${team} ${formatSpread(spread)}`,
         line: `${g.awayAbbr} @ ${g.homeAbbr} · O/U ${g.total ?? "—"}`,
         edge: a.edge,
-        confidence: Math.round(52 + a.edge * 180),
+        confidence: Math.round(52 + a.edge * 180) - (weekendEase ? 3 : 0),
         why: a.why,
         books: booksFor(g, board),
-        tape:
-          Math.abs(spread) >= 7
-            ? "Heavy public favorite for spreads and survivor. Only lean this side if anytime-TD / scoring prices also back a cover — not just the spread."
-            : Math.abs(spread) <= 3
-              ? "Short favorites get bet just because the number looks small. Only take it if the matchup or TD prices actually disagree with the market."
-              : "Mid-range number — books and public usually split. Lean it only with a real mismatch.",
+        tape: weekendEase ? `${WEEKEND_EASE_NOTE} ${baseTape}` : baseTape,
         unit: atsUnit(a.edge),
       });
     }
-    const t = scoreTotal(g, board, tighten.overAdd, tighten.underAdd);
+    const t = scoreTotal(g, board, tighten.overAdd, tighten.underAdd, weekendEase);
     if (t && g.total != null) {
       const gap = t.expected - g.total;
+      const baseTape =
+        t.pick === "over"
+          ? "Overs are the public side. Need implied points (not just ATD juice) to clear a 2-point gap."
+          : "Unders need a real gap vs implied, or outdoor weather. No forced 1u under.";
       totals.push({
         id: `ou-${g.id}`,
         title: `${t.pick === "over" ? "Over" : "Under"} ${g.total}`,
@@ -490,12 +517,10 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
         pick: `${t.pick} ${g.total}`,
         line: `${g.awayAbbr} @ ${g.homeAbbr}`,
         edge: t.edge,
-        confidence: Math.round(51 + t.edge * 160),
+        confidence: Math.round(51 + t.edge * 160) - (weekendEase ? 3 : 0),
         why: t.why,
         books: booksFor(g, board),
-        tape: t.pick === "over"
-          ? "Overs are the public side. Need implied points (not just ATD juice) to clear a 2-point gap."
-          : "Unders need a real gap vs implied, or outdoor weather. No forced 1u under.",
+        tape: weekendEase ? `${WEEKEND_EASE_NOTE} ${baseTape}` : baseTape,
         unit: totalUnit(gap),
       });
     }
@@ -504,7 +529,7 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
   ats.sort((a, b) => b.edge - a.edge);
   totals.sort((a, b) => b.edge - a.edge);
 
-  const spreadLock = ats[0] && ats[0].edge >= ATS_FLOOR + tighten.atsAdd ? ats[0] : null;
+  const spreadLock = ats[0] && ats[0].edge >= atsFloor ? ats[0] : null;
   const bestBets = [...ats, ...totals].sort((a, b) => b.edge - a.edge).slice(0, 2);
 
   const playerProps = [
@@ -973,6 +998,8 @@ export function buildWeeklyDesk(games: Game[], players: Player[], tighten: DeskT
     sources: ["Vegas / Bovada", "FanDuel", "DraftKings", "SNAPVALUE model", "Public tape + X cappers"],
     remainingOnly,
     tightenNotes: tighten.notes,
+    weekendEase,
+    easeNote: weekendEase ? WEEKEND_EASE_NOTE : null,
   };
 }
 

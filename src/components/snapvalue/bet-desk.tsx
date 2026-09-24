@@ -48,6 +48,11 @@ export function BetDesk({
           Remaining games this week — started / final slates are off the board
         </p>
       ) : null}
+      {desk.easeNote ? (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+          {desk.easeNote}
+        </p>
+      ) : null}
 
       <section>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -74,7 +79,9 @@ export function BetDesk({
       <section>
         <h2 className="display text-2xl font-semibold">Best bets</h2>
         <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-          0–2 cards that clear a higher edge bar. Empty is better than a forced pick. Do not parlay them.
+          {desk.weekendEase
+            ? "0–2 cards on the Saturday-eased bar. Still not forced — empty beats junk. Do not parlay them."
+            : "0–2 cards that clear a higher edge bar. Empty is better than a forced pick. Do not parlay them."}
         </p>
         {desk.bestBets.length === 0 ? (
           <p className="text-muted-foreground text-sm">No spread or total clearing the bar on remaining games.</p>
