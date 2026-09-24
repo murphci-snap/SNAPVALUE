@@ -270,7 +270,7 @@ export function emptyGradeHint(opts: {
   if (opts.stampedCount === 0) {
     return opts.sport === "UFC"
       ? "Nothing graded yet. No stamped card — grades lock when the card is first shown near fight time. Empty bets are fine."
-      : "Nothing graded yet. No stamped slate — grades lock when kickoff approaches. Empty bets are fine.";
+      : "No stamped slate yet — grades appear after lock. Empty bets are fine — not a dead model.";
   }
   return opts.sport === "UFC"
     ? "Card stamped. Nothing graded yet — grades when fights are final (ESPN completed + winner)."

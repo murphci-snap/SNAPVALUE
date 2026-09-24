@@ -205,5 +205,5 @@ export function emptyLineupGradeHint(sport: "NFL" | "UFC" = "NFL"): string {
   if (sport === "UFC") {
     return "No UFC lineups graded yet. Snapshots stamp when shown or exported; actuals stay pending for now.";
   }
-  return "Nothing graded yet. Run post-slate review after boxes post — empty lineups are fine until then.";
+  return "No stamped slate yet — grades appear after lock. Run post-slate review after boxes post.";
 }
