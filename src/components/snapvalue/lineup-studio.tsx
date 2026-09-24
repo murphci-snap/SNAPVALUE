@@ -1,13 +1,19 @@
 import { Copy, Download, Lock, RefreshCw, Sparkles, Unlock } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { reviewLineup, slateReviewReady, type CashVerdict } from "@/lib/dfs/cash-review";
+import {
+  loadLineupLedger,
+  recordLineupReviews,
+  type LineupLedgerEntry,
+} from "@/lib/dfs/lineup-ledger";
 import { CONTEST_META, generateLineups, lineupAsDkPaste, lineupsAsDkCsv, type ContestStyle } from "@/lib/dfs/optimizer";
 import { SLOT_LABEL } from "@/lib/dfs/constants";
 import type { Game, Lineup, Player, SlateFormat } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary, formatUsd, playerSpotLine } from "@/lib/utils";
 import { CyBadge } from "./cy-badge";
+import { LineupWeeklyGradeCard } from "./weekly-grade-card";
 
 const CLASSIC_CONTESTS: ContestStyle[] = ["single", "milly", "small", "doubleup"];
 const SHOWDOWN_CONTESTS: ContestStyle[] = ["doubleup", "milly"];
@@ -27,6 +33,8 @@ export function LineupStudio({
   excludes,
   onToggleLock,
   format = "classic",
+  week = 1,
+  season = 2026,
 }: {
   players: Player[];
   games?: Game[];
@@ -34,6 +42,8 @@ export function LineupStudio({
   excludes: string[];
   onToggleLock: (id: string) => void;
   format?: SlateFormat;
+  week?: number;
+  season?: number;
 }) {
   const [count, setCount] = useState(6);
   const [stack, setStack] = useState(true);
@@ -41,12 +51,17 @@ export function LineupStudio({
   const [seed, setSeed] = useState(1);
   const [copied, setCopied] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
+  const [ledger, setLedger] = useState<LineupLedgerEntry[]>([]);
   const reviewDefault = useMemo(() => slateReviewReady(players), [players]);
   const [reviewOn, setReviewOn] = useState(reviewDefault);
   const showdown = format === "showdown";
   const contests = showdown ? SHOWDOWN_CONTESTS : CLASSIC_CONTESTS;
   const activeContest = showdown && contest !== "doubleup" && contest !== "milly" ? "doubleup" : contest;
   const gameCount = games.length || new Set(players.map((p) => p.gameName).filter(Boolean)).size || 13;
+
+  useEffect(() => {
+    setLedger(loadLineupLedger());
+  }, [week, season]);
 
   const lineups = useMemo(
     () =>
@@ -59,6 +74,25 @@ export function LineupStudio({
       }),
     [players, count, seed, stack, locks, excludes, activeContest, format, showdown],
   );
+
+  const reviews = useMemo(
+    () => (reviewOn ? lineups.map((lu) => reviewLineup(lu, activeContest, format, gameCount)) : lineups.map(() => null)),
+    [reviewOn, lineups, activeContest, format, gameCount],
+  );
+
+  useEffect(() => {
+    if (!lineups.length) return;
+    const next = recordLineupReviews({
+      lineups,
+      reviews,
+      week,
+      season,
+      sport: "NFL",
+      contestStyle: activeContest,
+      format,
+    });
+    setLedger(next);
+  }, [lineups, reviews, week, season, activeContest, format]);
 
   function copy(lineup: Lineup) {
     void navigator.clipboard.writeText(lineupAsDkPaste(lineup, format));
@@ -163,6 +197,8 @@ export function LineupStudio({
         </p>
       </div>
 
+      <LineupWeeklyGradeCard entries={ledger} week={week} season={season} />
+
       {reviewDefault ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
@@ -198,7 +234,7 @@ export function LineupStudio({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {lineups.map((lu, i) => {
-            const rev = reviewOn ? reviewLineup(lu, activeContest, format, gameCount) : null;
+            const rev = reviews[i] ?? null;
             return (
             <article
               key={lu.id}
@@ -285,6 +321,9 @@ export function LineupStudio({
                         </span>
                         <span className="text-faint block truncate text-[11px]">{playerSpotLine(lp.player, { games })}</span>
                       </span>
+                      <span className="w-10 text-right font-mono text-[10px] tabular-nums text-muted-foreground">
+                        {lp.player.ownership != null ? `${Math.round(lp.player.ownership)}%` : "—"}
+                      </span>
                       <span className="font-mono text-xs text-muted-foreground tabular-nums">
                         {formatPts(lp.player.projection)}
                       </span>
@@ -319,12 +358,12 @@ export function LineupStudio({
         {showdown
           ? "Showdown: one Captain at 1.5× salary and points, five UTIL. Not advice."
           : activeContest === "milly"
-            ? "GPP build: stacks, bring-backs, and bargain-bin darts. Not advice."
+            ? "GPP: leverage / low-own, stacks + bring-backs. Own % on each row. Not advice."
             : activeContest === "small"
-              ? "Small-field build: floor first, spend the cap. Not advice."
+              ? "Small-field cash: correlated stacks / bring-backs with floor. Own % shown. Not advice."
               : activeContest === "doubleup"
-                ? "Double Up: chalk, floors, spend the cap. Not advice."
-                : "Single-entry build: one core plus a leverage piece. Not advice."}
+                ? "Double Up cash: correlated stacks / bring-backs, high floors. Own % shown. Not advice."
+                : "Single-entry: one core plus a leverage piece. Own % on each row. Not advice."}
       </p>
     </section>
   );

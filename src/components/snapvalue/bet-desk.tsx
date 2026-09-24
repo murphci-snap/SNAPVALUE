@@ -1,121 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { buildWeeklyDesk, type DeskBet, type TdLeg } from "@/lib/dfs/desk";
-import { deskTighten, ledgerSummary, loadLedger, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
+import { buildWeeklyDesk } from "@/lib/dfs/desk";
+import { deskTighten, loadLedger, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
 import { formatAmerican, formatPct } from "@/lib/dfs/markets";
 import type { Game, Player } from "@/lib/dfs/types";
-import { normalizeName, playerSpotLine } from "@/lib/utils";
-import { CyBadge } from "./cy-badge";
-
-function Conf({ n }: { n: number }) {
-  const w = Math.max(8, Math.min(100, n));
-  return (
-    <div className="bg-secondary mt-3 h-1 overflow-hidden rounded-full">
-      <div className="bg-value h-full rounded-full" style={{ width: `${w}%` }} />
-    </div>
-  );
-}
-
-function BetCard({ bet, kicker }: { bet: DeskBet; kicker?: string }) {
-  return (
-    <li className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-faint text-[10px] tracking-[0.18em] uppercase">{kicker ?? bet.market}</p>
-        <p className="font-mono text-[11px] text-value tabular-nums">{bet.unit}</p>
-      </div>
-      <h3 className="display mt-1 text-2xl leading-none font-semibold">{bet.title}</h3>
-      <p className="text-muted-foreground mt-1 text-xs">{bet.line}</p>
-      <p className="mt-3 text-sm leading-snug">{bet.why}</p>
-      <p className="text-ink mt-2 text-xs leading-snug">{bet.tape}</p>
-      <Conf n={bet.confidence} />
-      <p className="text-faint mt-2 font-mono text-[11px]">
-        {bet.books} · conf {bet.confidence}
-      </p>
-    </li>
-  );
-}
-
-function findPlayer(players: Player[], name: string, team?: string): Player | undefined {
-  const key = normalizeName(name);
-  const hits = players.filter((p) => normalizeName(p.name) === key);
-  if (team) {
-    const t = hits.find((p) => p.team === team);
-    if (t) return t;
-  }
-  return hits[0] ?? players.find((p) => normalizeName(p.name).includes(key) || key.includes(normalizeName(p.name)));
-}
-
-function Spot({ player, games }: { player?: Player; games: Game[] }) {
-  if (!player) return null;
-  const line = playerSpotLine(player, { games });
-  if (!line) return null;
-  return <p className="text-muted-foreground mt-1 text-[11px]">{line}</p>;
-}
-function splitPropPick(pick: string): { name: string; market: string } {
-  const m = pick.match(/^(.*?)\s+([ou])(\d+(?:\.\d+)?)\s+(.+)$/i);
-  if (!m) return { name: pick, market: "" };
-  const side = m[2]!.toLowerCase() === "o" ? "Over" : "Under";
-  return { name: m[1]!, market: `${side} ${m[3]} ${m[4]}` };
-}
-
-function PropCard({ bet, kicker, players, games }: { bet: DeskBet; kicker: string; players: Player[]; games: Game[] }) {
-  const { name, market } = splitPropPick(bet.pick);
-  const player = findPlayer(players, name);
-  return (
-    <li className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-faint text-[10px] tracking-[0.18em] uppercase">{kicker}</p>
-        <p className="font-mono text-[11px] text-value tabular-nums">{bet.unit}</p>
-      </div>
-      <h3 className="display mt-1 flex items-center gap-2 text-2xl leading-none font-semibold">
-        {name}
-        <CyBadge cy={player?.contractYear} />
-      </h3>
-      <Spot player={player} games={games} />
-      <p className="display mt-2 text-lg leading-none font-semibold text-value">{market || bet.title}</p>
-      <p className="text-muted-foreground mt-1 text-xs">{bet.line}</p>
-      <p className="mt-3 text-sm leading-snug">{bet.why}</p>
-      <p className="text-ink mt-2 text-xs leading-snug">{bet.tape}</p>
-      <Conf n={bet.confidence} />
-      <p className="text-faint mt-2 font-mono text-[11px]">
-        {bet.books} · conf {bet.confidence}
-      </p>
-    </li>
-  );
-}
-
-function TdLegCard({
-  leg,
-  i,
-  players,
-  games,
-  compact,
-}: {
-  leg: TdLeg;
-  i: number;
-  players: Player[];
-  games: Game[];
-  compact?: boolean;
-}) {
-  const player = findPlayer(players, leg.name, leg.team);
-  return (
-    <li className="rounded-lg bg-secondary px-3 py-3">
-      <p className="text-faint text-[10px] tracking-[0.16em] uppercase">
-        Leg {i + 1}
-        {leg.marketLabel ? ` · ${leg.marketLabel}` : leg.kind === "atd" ? " · ATD" : leg.kind === "multi_td" ? " · 2+ TD" : ""}
-      </p>
-      <p className={`display flex items-center gap-2 leading-none font-semibold ${compact ? "text-xl" : "text-2xl"}`}>
-        {leg.name}
-        <CyBadge cy={player?.contractYear} />
-      </p>
-      <Spot player={player} games={games} />
-      <p className="text-muted-foreground mt-1 font-mono text-xs">
-        {formatAmerican(leg.american)}
-        {!player ? ` · ${leg.team} vs ${leg.opponent}` : ""}
-      </p>
-      <p className="mt-2 text-xs leading-snug">{leg.why}</p>
-    </li>
-  );
-}
+import { BetDeskWeeklyGrade } from "./bet-desk-weekly-grade";
+import { BetCard, Conf, PropCard, TdLegCard } from "./bet-desk-cards";
 
 export function BetDesk({
   games,
@@ -130,8 +19,6 @@ export function BetDesk({
 }) {
   const [history, setHistory] = useState<GradedBet[]>([]);
   const [ledger, setLedger] = useState<GradedBet[]>([]);
-  const [open, setOpen] = useState(false);
-
   useEffect(() => {
     setHistory(loadLedger());
   }, []);
@@ -143,70 +30,14 @@ export function BetDesk({
     setLedger(settleDesk({ desk, games, players, week, season }));
   }, [desk, games, players, week, season]);
 
-  const rec = useMemo(() => ledgerSummary(ledger, week, season), [ledger, week, season]);
-
   return (
     <div className="flex flex-col gap-10">
-      <section className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <p className="text-faint text-[10px] tracking-[0.18em] uppercase">Track record</p>
-            <h2 className="display text-2xl leading-none font-semibold">
-              WK {week} {rec.week.w}-{rec.week.l}
-              <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
-                season {rec.season.w}-{rec.season.l}
-              </span>
-            </h2>
-          </div>
-          <p className="font-mono text-sm tabular-nums">
-            <span className={rec.season.units >= 0 ? "text-value" : "text-warn"}>
-              {rec.season.units >= 0 ? "+" : ""}
-              {rec.season.units.toFixed(2)}u
-            </span>
-            <span className="text-muted-foreground">
-              {" "}
-              · {rec.season.w + rec.season.l ? `${Math.round(rec.season.hit * 100)}%` : "—"} hit
-            </span>
-          </p>
-        </div>
-        {Object.keys(rec.byMarket).length ? (
-          <p className="text-muted-foreground mt-2 font-mono text-[11px]">
-            {Object.entries(rec.byMarket)
-              .map(([k, v]) => `${k} ${v.w}-${v.l}`)
-              .join(" · ")}
-          </p>
-        ) : (
-          <p className="text-muted-foreground mt-2 text-xs">Grades when games are final. Nothing settled yet.</p>
-        )}
-        {desk.tightenNotes.length ? (
-          <p className="text-ink mt-2 text-xs">{desk.tightenNotes.join(" · ")}</p>
-        ) : null}
-        {rec.weekRows.length ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="text-faint mt-3 text-xs tracking-wide uppercase"
-          >
-            {open ? "Hide week" : "This week’s grades"}
-          </button>
-        ) : null}
-        {open ? (
-          <ol className="mt-3 flex flex-col gap-1.5">
-            {rec.weekRows.map((b) => (
-              <li key={b.id} className="flex items-baseline justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate">
-                  <span className="text-faint mr-2 font-mono text-[10px] uppercase">{b.market}</span>
-                  {b.pick}
-                </span>
-                <span className={`shrink-0 font-mono text-xs tabular-nums ${b.result === "win" ? "text-value" : b.result === "loss" ? "text-warn" : "text-muted-foreground"}`}>
-                  {b.result} {b.pnl > 0 ? "+" : ""}
-                  {b.pnl.toFixed(2)}u
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </section>
+      <BetDeskWeeklyGrade
+        ledger={ledger}
+        week={week}
+        season={season}
+        tightenNotes={desk.tightenNotes}
+      />
 
       <p className="text-muted-foreground max-w-2xl text-sm">
         Units scale with edge: props and 2-leg ATD 0.25–0.75u. Totals only go to 1u on a large gap.

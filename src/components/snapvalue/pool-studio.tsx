@@ -10,8 +10,10 @@ import {
   type FutureSpot,
   type PoolKind,
   type PoolPick,
+  type PoolSize,
   type PoolWatch,
 } from "@/lib/dfs/pools";
+import { PoolSizeBar, usePoolSize } from "./pool-size-bar";
 import type { Game } from "@/lib/dfs/types";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +119,7 @@ function PoolBlock({
   week,
   season,
   future,
+  poolSize,
 }: {
   kind: PoolKind;
   title: string;
@@ -125,6 +128,7 @@ function PoolBlock({
   week: number;
   season: number;
   future: FutureSpot[];
+  poolSize: PoolSize;
 }) {
   const usedKey = `snapvalue.${kind}.${season}.used`;
   const nKey = `snapvalue.${kind}.${season}.n`;
@@ -146,8 +150,8 @@ function PoolBlock({
   }, [used, usedKey]);
 
   const plan = useMemo(
-    () => buildPoolPlan(kind, games, entries, used, week, future),
-    [kind, games, entries, used, week, future],
+    () => buildPoolPlan(kind, games, entries, used, week, future, poolSize),
+    [kind, games, entries, used, week, future, poolSize],
   );
 
   function toggle(team: string) {
@@ -288,6 +292,7 @@ function PoolBlock({
 
 export function PoolStudio({ games, week, season }: { games: Game[]; week: number; season: number }) {
   const early = week <= 2;
+  const [poolSize, setPoolSize] = usePoolSize(season);
   const [future, setFuture] = useState<FutureSpot[]>([]);
   useEffect(() => {
     let live = true;
@@ -308,6 +313,7 @@ export function PoolStudio({ games, week, season }: { games: Game[]; week: numbe
             ? `Week ${week}: cash Ticket 1. Hammers are leftover-schedule locks, not every 75% favorite. Used teams reset each season.`
             : `Two contests, same week. Survivor: pick a winner. Loser: pick a team to lose. Multiple tickets stay unique.`}
         </p>
+        <PoolSizeBar poolSize={poolSize} setPoolSize={setPoolSize} />
       </header>
       <div className="grid gap-12 xl:grid-cols-2">
         <PoolBlock
@@ -322,6 +328,7 @@ export function PoolStudio({ games, week, season }: { games: Game[]; week: numbe
           week={week}
           season={season}
           future={future}
+          poolSize={poolSize}
         />
         <PoolBlock
           kind="loser"
@@ -335,6 +342,7 @@ export function PoolStudio({ games, week, season }: { games: Game[]; week: numbe
           week={week}
           season={season}
           future={future}
+          poolSize={poolSize}
         />
       </div>
     </div>

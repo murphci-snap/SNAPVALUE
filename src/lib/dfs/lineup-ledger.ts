@@ -87,7 +87,6 @@ export function recordLineupReviews(opts: {
   opts.lineups.forEach((lu, i) => {
     const rev = opts.reviews[i];
     if (!rev) return;
-    // Only persist meaningful outcomes (or projections when first shown)
     const key = entryKey({
       sport,
       season: opts.season,
@@ -113,12 +112,10 @@ export function recordLineupReviews(opts: {
       recordedAt: prev?.recordedAt ?? now,
       updatedAt: now,
     };
-    // Prefer settled verdicts over live/pending when updating
     if (prev) {
       const settled = rev.verdict === "cash" || rev.verdict === "miss" || rev.verdict === "borderline";
       const prevSettled = prev.verdict === "cash" || prev.verdict === "miss" || prev.verdict === "borderline";
       if (prevSettled && !settled) {
-        // keep prior settled row but refresh actual if better
         if (rev.actual != null && (prev.actual == null || rev.actual !== prev.actual)) {
           byKey.set(key, { ...prev, actual: rev.actual, updatedAt: now });
         }
@@ -129,7 +126,6 @@ export function recordLineupReviews(opts: {
   });
 
   store.entries = [...byKey.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  // Cap growth
   if (store.entries.length > 200) store.entries = store.entries.slice(0, 200);
   writeStore(store);
   return store.entries;
@@ -202,4 +198,12 @@ export function lineupLedgerSummary(
     weekRows,
     recent: scope.slice(0, 8),
   };
+}
+
+/** Clear empty-state copy when no lineup grades yet. */
+export function emptyLineupGradeHint(sport: "NFL" | "UFC" = "NFL"): string {
+  if (sport === "UFC") {
+    return "No UFC lineups graded yet. Snapshots stamp when shown or exported; actuals stay pending for now.";
+  }
+  return "Nothing graded yet. Run post-slate review after boxes post — empty lineups are fine until then.";
 }

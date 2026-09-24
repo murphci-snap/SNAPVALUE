@@ -33,7 +33,8 @@ function whyBits(p: Player, games: Game[], _residual: number): string[] {
   const bits: string[] = [];
   const g = games.find((x) => x.homeAbbr === p.team || x.awayAbbr === p.team);
   const imp = implied(p, games);
-  if (p.salary >= 5000 && p.salary <= 8000) bits.push(`$${(p.salary / 1000).toFixed(1)}k · Leverage smash`);
+  if (p.salary >= 4800 && p.salary <= 7800) bits.push(`$${(p.salary / 1000).toFixed(1)}k · mid-price volume`);
+  else if (p.salary >= 5000 && p.salary <= 8200) bits.push(`$${(p.salary / 1000).toFixed(1)}k · Leverage smash`);
   const atdExp = expectedAtd(p);
   if (p.anytimeTd != null && p.anytimeTd >= atdExp + 0.06) {
     bits.push(`${Math.round(p.anytimeTd * 100)}% ATD vs typical for this salary`);
@@ -96,23 +97,35 @@ export function smashScore(p: Player, games: Game[], lens: BoardLens = "all"): n
   if (p.fppg >= 6) s += clamp((p.projection - p.fppg) / 7, -0.5, 1.2);
   if (p.value >= 2.7 && p.salary < 8200) s += 0.7;
 
+  // Prefer mid-price with real volume (targets/carries via props + pace), not pure chalk
+  const midPrice = p.salary >= 4800 && p.salary <= 7800;
+  const volume =
+    (p.props?.receptions ?? 0) +
+    (p.props?.rushYds != null ? Math.max(0, (p.props.rushYds - 20) / 12) : 0) +
+    (p.props?.recYds != null ? Math.max(0, (p.props.recYds - 30) / 18) : 0) +
+    (p.week ? p.week.receptions + p.week.rushYds / 14 : 0);
+  if (midPrice && volume >= 4.5) s += 0.85;
+  else if (midPrice && volume >= 3) s += 0.45;
+  if (p.salary >= 8600 && volume < 3.2) s -= 0.7;
+
   const own = p.ownership ?? 12;
   const elite = s >= 4.2;
   if (p.isValuePlay && p.cheapImpact && p.salary >= 7500 && !elite) s -= 1.4;
 
   if (lens === "gpp") {
     if (p.salary >= 8500) s *= elite ? 0.72 : 0.38;
-    else if (p.salary >= 5000 && p.salary <= 8000) s *= 1.28;
-    if (own >= 20) s *= 0.58;
-    else if (own <= 11) s *= 1.22;
+    else if (p.salary >= 5000 && p.salary <= 8000) s *= 1.32;
+    if (own >= 20) s *= 0.55;
+    else if (own <= 11) s *= 1.24;
   } else if (lens === "cash") {
     s += Math.max(0, p.projection - 12) * 0.14;
     if (own >= 15) s *= 1.06;
     if (p.salary < 4500) s *= 0.62;
     if (p.cheapImpact && p.projection < 12) s *= 0.65;
+    if (midPrice && volume >= 4) s *= 1.08;
   } else {
-    if (p.salary >= 8800) s *= elite ? 0.8 : 0.55;
-    else if (p.salary >= 5000 && p.salary <= 8000) s *= 1.16;
+    if (p.salary >= 8800) s *= elite ? 0.78 : 0.52;
+    else if (p.salary >= 5000 && p.salary <= 8000) s *= 1.2;
   }
 
   return s;

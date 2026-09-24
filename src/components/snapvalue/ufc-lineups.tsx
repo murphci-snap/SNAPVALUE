@@ -2,7 +2,7 @@ import { Copy, Download, Lock, RefreshCw, Unlock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatAmerican } from "@/lib/dfs/markets";
-import { lineupLedgerSummary, loadLineupLedger, recordUfcLineupSnapshots, type LineupLedgerEntry } from "@/lib/dfs/lineup-ledger";
+import { emptyLineupGradeHint, lineupLedgerSummary, loadLineupLedger, recordUfcLineupSnapshots, type LineupLedgerEntry } from "@/lib/dfs/lineup-ledger";
 import { generateUfcLineups, UFC_CONTEST_META, ufcLineupAsDkPaste, ufcLineupsAsDkCsv, type UfcContest } from "@/lib/ufc/optimizer";
 import type { UfcSlateData } from "@/lib/ufc/types";
 import { cn, formatPts, formatSalary } from "@/lib/utils";
@@ -131,7 +131,7 @@ export function UfcLineups({
         </div>
         {!track.weekRows.length ? (
           <p className="text-muted-foreground mt-2 text-xs">
-            Lineups stamp when shown or exported. UFC actuals stay pending (proj-only for now).
+            {emptyLineupGradeHint("UFC")}
           </p>
         ) : (
           <ol className="mt-3 flex flex-col gap-1.5">

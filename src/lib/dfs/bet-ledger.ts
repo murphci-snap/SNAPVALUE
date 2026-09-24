@@ -90,7 +90,7 @@ export function deskTighten(bets: GradedBet[]): DeskTighten {
   };
   const spread = of("spread");
   if (cold(spread)) {
-    out.atsAdd = 0.015;
+    out.atsAdd = spread.length >= 8 ? 0.022 : 0.015;
     out.notes.push("Spreads tightened from track record");
   }
   const totals = of("total");
@@ -111,13 +111,14 @@ export function deskTighten(bets: GradedBet[]): DeskTighten {
       out.notes.push("Totals tightened from track record");
     }
   }
-  if (cold(of("prop"))) {
-    out.propAdd = 0.025;
+  const props = of("prop");
+  if (cold(props)) {
+    out.propAdd = props.length >= 8 ? 0.035 : 0.025;
     out.notes.push("Props tightened from track record");
   }
   const atd = [...of("atd"), ...of("atd3")];
   if (cold(atd)) {
-    out.atdMinEdge = 0.08;
+    out.atdMinEdge = atd.length >= 8 ? 0.1 : 0.08;
     out.hideAtd3 = true;
     out.notes.push("ATD parlays tightened from track record");
   }
@@ -268,10 +269,10 @@ export function emptyGradeHint(opts: {
   if (opts.gradedCount > 0) return "";
   if (opts.stampedCount === 0) {
     return opts.sport === "UFC"
-      ? "No stamped card yet — grades lock when the card is first shown near fight time."
-      : "No stamped slate yet — grades lock when kickoff approaches. Waiting on finals.";
+      ? "Nothing graded yet. No stamped card — grades lock when the card is first shown near fight time. Empty bets are fine."
+      : "Nothing graded yet. No stamped slate — grades lock when kickoff approaches. Empty bets are fine.";
   }
   return opts.sport === "UFC"
-    ? "Card stamped. Grades when fights are final (ESPN completed + winner)."
-    : "Slate stamped. Grades when games are final (scores / box when needed).";
+    ? "Card stamped. Nothing graded yet — grades when fights are final (ESPN completed + winner)."
+    : "Slate stamped. Nothing graded yet — grades when games are final (scores / box when needed).";
 }
