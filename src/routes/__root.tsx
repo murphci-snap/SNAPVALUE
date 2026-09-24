@@ -4,21 +4,27 @@ import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { Providers } from "@/components/providers";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "SNAPVALUE";
-
 export const Route = createRootRoute({
   notFoundComponent: () => <Navigate to="/" replace />,
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: APP_NAME },
+      { title: "SNAPVALUE — NFL DFS values, lineups, survivor" },
       {
         name: "description",
         content:
-          "Weekly daily fantasy football command center — salaries, stats, matchups, value, and optimum lineups.",
+          "NFL DFS command center — DraftKings values, IT Factor, optimum lineups, survivor / loser pools, and a public gradebook. For entertainment only.",
       },
       { name: "theme-color", content: "#0b0d0c" },
+      { property: "og:title", content: "SNAPVALUE — NFL DFS values, lineups, survivor" },
+      {
+        property: "og:description",
+        content:
+          "Read the tape. Spend the cap. Smash the slate — values, lineups, and survivor without accounts.",
+      },
+      { property: "og:image", content: "/command-center.jpg" },
+      { property: "og:type", content: "website" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
