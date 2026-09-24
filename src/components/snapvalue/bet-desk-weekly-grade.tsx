@@ -21,10 +21,14 @@ export function BetDeskWeeklyGrade({
         <div>
           <p className="text-faint text-[10px] tracking-[0.18em] uppercase">Weekly grade</p>
           <h2 className="display text-2xl leading-none font-semibold">
-            WK {week} {rec.week.w}-{rec.week.l}
-            <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
-              season {rec.season.w}-{rec.season.l}
-            </span>
+            {rec.season.w + rec.season.l === 0 && rec.week.w + rec.week.l === 0
+              ? "No stamped slate yet"
+              : <>
+                  WK {week} {rec.week.w}-{rec.week.l}
+                  <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
+                    season {rec.season.w}-{rec.season.l}
+                  </span>
+                </>}
           </h2>
         </div>
         <p className="font-mono text-sm tabular-nums">
