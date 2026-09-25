@@ -795,23 +795,34 @@ function Header({
         <img
           src="/command-center.jpg"
           alt=""
-          className="h-36 w-full object-cover object-[center_85%] sm:h-44 lg:h-52"
+          className="absolute inset-0 h-full w-full object-cover object-[center_85%]"
         />
-        <div className="from-background absolute inset-0 bg-gradient-to-t via-background/80 to-background/40" />
-        <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[1440px] px-4 pb-4 lg:px-6">
+        <div className="from-background absolute inset-0 bg-gradient-to-t via-background/85 to-background/50" />
+        <div className="relative mx-auto max-w-[1440px] px-4 py-8 lg:px-6 lg:py-10">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <h1 className="display text-4xl leading-none font-semibold tracking-wide sm:text-5xl">SNAPVALUE</h1>
             <p className="display text-2xl leading-none font-semibold tracking-wide text-ink sm:text-3xl">
               DFS Command Center
             </p>
           </div>
-          <p className="text-muted-foreground mt-2 max-w-xl text-sm sm:text-base">
-            {sport === "UFC"
-              ? `${ufc?.headline ?? "Fight card"}. Spend the cap. Smash the slate.`
-              : sport === "NBA"
-                ? "Tonight’s board. Spend the cap. Smash the slate."
-                : `Week ${data?.week ?? ""}. Read the tape. Spend the cap. Smash the slate.`}
-          </p>
+          {sport === "NFL" ? (
+            <p className="display mt-4 text-center text-3xl leading-none font-semibold tracking-wide text-ink sm:text-4xl">
+              Week {data?.week ?? ""}
+            </p>
+          ) : (
+            <p className="text-muted-foreground mt-3 max-w-xl text-sm sm:text-base">
+              {sport === "UFC" ? "Spend the cap. Smash the slate." : "Tonight’s board. Spend the cap. Smash the slate."}
+            </p>
+          )}
+          <div className="mt-3 text-center">
+            <p className="text-foreground text-sm font-medium tracking-wide sm:text-base">
+              DFS made simple. Value made real.
+            </p>
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
+              <span className="italic">“in a league where they play for pay”</span>
+              <span className="text-faint ml-2 text-xs tracking-wide uppercase not-italic">Mike Francesa</span>
+            </p>
+          </div>
         </div>
       </div>
       <div className="border-border/80 sticky top-0 z-30 border-t bg-background/85 backdrop-blur-md">
@@ -877,9 +888,10 @@ function Header({
                 s.draftGroupId === activeId &&
                 (sport !== "NFL" || (chipWindow ?? "main") === (activeWindow ?? "main"));
               const title = extra.title || (s.format === "showdown" ? s.suffix : slateName(s.suffix));
-              const subtitle = extra.title
+              const rawSubtitle = extra.title
                 ? extra.subtitle || ""
                 : extra.subtitle || `${s.gameCount} ${s.gameCount === 1 ? "game" : "games"}`;
+              const subtitle = sport === "UFC" && /\s+vs\.?\s+/i.test(rawSubtitle) ? "" : rawSubtitle;
               return (
                 <button
                   key={chipWindow ? `${s.draftGroupId}:${chipWindow}` : String(s.draftGroupId)}
