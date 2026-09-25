@@ -98,10 +98,17 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   const [refreshing, setRefreshing] = useState(false);
   const [gateReady, setGateReady] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [site, setSite] = useState<"DK" | "FD">("DK");
 
   useEffect(() => {
     setAccepted(readDisclaimerAccepted());
     setSport(readSport());
+    try {
+      const s = localStorage.getItem("snapvalue.site");
+      if (s === "FD") setSite("FD");
+    } catch {
+      /* ignore */
+    }
     setGateReady(true);
   }, []);
 
@@ -133,7 +140,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     refetchOnMount: true,
     refetchInterval: NBA_REFRESH_MS,
     retry: 2,
-    enabled: sport === "NBA" && accepted,
+    enabled: accepted,
   });
 
   const ufcQuery = useQuery({
@@ -143,7 +150,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     refetchOnMount: true,
     refetchInterval: UFC_REFRESH_MS,
     retry: 2,
-    enabled: sport === "UFC" && accepted,
+    enabled: accepted,
   });
 
   const data = query.data;
@@ -168,6 +175,33 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
           : "UFC slate failed"
         : null;
 
+
+  const liveSports: Sport[] = ["NFL"];
+  if (nbaData && nbaData.players.length > 0) liveSports.push("NBA");
+  if (ufcData && ufcData.players.length > 0) liveSports.push("UFC");
+
+  useEffect(() => {
+    if (!accepted) return;
+    if (sport === "NBA" && nba && nba.ok && nba.players.length === 0) chooseSport("NFL");
+    if (sport === "UFC" && ufc && ufc.ok && ufc.players.length === 0) chooseSport("NFL");
+  }, [accepted, sport, nba, ufc]);
+
+  useEffect(() => {
+    if (!accepted) return;
+    if (sport === "NFL" && data && data.ok) {
+      document.title = `SNAPVALUE — NFL DFS values, lineups, survivor · Week ${data.week}`;
+    } else if (sport === "NBA") document.title = "SNAPVALUE — NBA DFS values";
+    else if (sport === "UFC") document.title = "SNAPVALUE — UFC DFS";
+  }, [accepted, sport, data]);
+
+  function chooseSite(next: "DK" | "FD") {
+    setSite(next);
+    try {
+      localStorage.setItem("snapvalue.site", next);
+    } catch {
+      /* ignore */
+    }
+  }
 
   function toggleLock(id: string) {
     setLocks((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -226,6 +260,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   }
 
   if (sport === "NBA") {
+    if (nba && nba.ok && nba.players.length === 0) return <BootScreen />;
     return (
       <NbaShell
         nba={nbaData}
@@ -242,11 +277,13 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         excludes={nbaExcludes}
         onToggleLock={toggleNbaLock}
         onToggleExclude={toggleNbaExclude}
+        sports={liveSports}
       />
     );
   }
 
   if (sport === "UFC") {
+    if (ufc && ufc.ok && ufc.players.length === 0) return <BootScreen />;
     return (
       <UfcShell
         ufc={ufcData}
@@ -262,6 +299,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         excludes={ufcExcludes}
         onToggleLock={toggleUfcLock}
         onToggleExclude={toggleUfcExclude}
+        sports={liveSports}
       />
     );
   }
@@ -275,12 +313,16 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
           {data && !data.ok ? data.error : "DraftKings blocked slate fetch — retry"}
         </p>
         <div className="flex gap-2">
-          <Button onClick={() => chooseSport("NBA")} variant="secondary">
-            NBA
-          </Button>
-          <Button onClick={() => chooseSport("UFC")} variant="secondary">
-            UFC
-          </Button>
+          {liveSports.includes("NBA") ? (
+            <Button onClick={() => chooseSport("NBA")} variant="secondary">
+              NBA
+            </Button>
+          ) : null}
+          {liveSports.includes("UFC") ? (
+            <Button onClick={() => chooseSport("UFC")} variant="secondary">
+              UFC
+            </Button>
+          ) : null}
           <Button onClick={() => void refresh()}>
             <RefreshCw /> Retry
           </Button>
@@ -303,8 +345,13 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
         onRefresh={() => void refresh()}
         onPpr={() => setTab(tab === "ppr" ? "board" : "ppr")}
         refreshing={refreshing || query.isFetching}
+        sports={liveSports}
+        site={site}
+        onSite={chooseSite}
       />
+      <HowToStrip />
       <MatchupStrip games={data.games} />
+      <InjuryStrip players={data.players} />
       {data.stale ? (
         <p className="bg-warn/15 text-warn mx-auto max-w-[1440px] px-4 py-2 text-center text-sm lg:px-6">
           DraftKings blocked a live refresh — showing cached slate. Retry in a bit.
@@ -312,7 +359,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
       ) : null}
       <div className="mx-auto max-w-[1440px] px-4 pb-16 lg:px-6">
         <StatsBar data={data} />
-        <div className="mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
+        <div className="bg-background/95 sticky top-[7.25rem] z-20 mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)] backdrop-blur-md">
           {(
             [
               ["board", "Players"],
@@ -353,6 +400,12 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
             </>
           )}
           {tab === "lineups" && (
+            <>
+              {site === "FD" ? (
+                <p className="text-muted-foreground mb-3 text-sm">
+                  FanDuel salaries aren’t on this board yet. Lineups stay DraftKings. The bets desk prefers FanDuel when that book is posted.
+                </p>
+              ) : null}
             <LineupStudio
               players={data.players}
               games={data.games}
@@ -360,11 +413,14 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
               excludes={excludes}
               onToggleLock={toggleLock}
               format={data.format ?? "classic"}
+              week={data.week}
+              season={data.season}
             />
+            </>
           )}
           {tab === "pools" && <PoolStudio games={data.games} week={data.week} season={data.season} />}
           {tab === "bets" && (
-            <BetDesk games={data.games} players={data.players} week={data.week} season={data.season} />
+            <BetDesk games={data.games} players={data.players} week={data.week} season={data.season} site={site} />
           )}
           {tab === "ppr" && <PprBoard data={data} />}
         </div>
@@ -388,6 +444,7 @@ function NbaShell({
   excludes,
   onToggleLock,
   onToggleExclude,
+  sports,
 }: {
   nba?: NbaSlateData;
   error: string | null;
@@ -402,6 +459,7 @@ function NbaShell({
   excludes: string[];
   onToggleLock: (id: string) => void;
   onToggleExclude: (id: string) => void;
+  sports: Sport[];
 }) {
   if (loading) return <BootScreen sport="NBA" />;
   if (error && !nba) {
@@ -413,9 +471,11 @@ function NbaShell({
           <Button variant="secondary" onClick={() => onSport("NFL")}>
             NFL
           </Button>
-          <Button variant="secondary" onClick={() => onSport("UFC")}>
-            UFC
-          </Button>
+          {sports.includes("UFC") ? (
+            <Button variant="secondary" onClick={() => onSport("UFC")}>
+              UFC
+            </Button>
+          ) : null}
           <Button onClick={onRefresh}>
             <RefreshCw /> Retry
           </Button>
@@ -436,7 +496,9 @@ function NbaShell({
         onRefresh={onRefresh}
         onPpr={() => onTab("board")}
         refreshing={refreshing}
+        sports={sports}
       />
+      <HowToStrip />
       <MatchupStrip games={nba.games} weather={false} />
       {nba.notice ? (
         <p className="bg-ink/10 text-ink mx-auto max-w-[1440px] px-4 py-2 text-center text-sm lg:px-6">{nba.notice}</p>
@@ -462,7 +524,7 @@ function NbaShell({
             {nba.sources.filter((s) => s.ok).map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
           </span>
         </div>
-        <div className="mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
+        <div className="bg-background/95 sticky top-[7.25rem] z-20 mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)] backdrop-blur-md">
           {(
             [
               ["board", "Players"],
@@ -512,6 +574,7 @@ function UfcShell({
   excludes,
   onToggleLock,
   onToggleExclude,
+  sports,
 }: {
   ufc?: UfcSlateData;
   error: string | null;
@@ -526,6 +589,7 @@ function UfcShell({
   excludes: string[];
   onToggleLock: (id: string) => void;
   onToggleExclude: (id: string) => void;
+  sports: Sport[];
 }) {
   if (loading) return <BootScreen sport="UFC" />;
   if (error && !ufc) {
@@ -537,9 +601,11 @@ function UfcShell({
           <Button variant="secondary" onClick={() => onSport("NFL")}>
             NFL
           </Button>
-          <Button variant="secondary" onClick={() => onSport("NBA")}>
-            NBA
-          </Button>
+          {sports.includes("NBA") ? (
+            <Button variant="secondary" onClick={() => onSport("NBA")}>
+              NBA
+            </Button>
+          ) : null}
           <Button onClick={onRefresh}>
             <RefreshCw /> Retry
           </Button>
@@ -562,6 +628,7 @@ function UfcShell({
         onRefresh={onRefresh}
         onPpr={() => onTab("board")}
         refreshing={refreshing}
+        sports={sports}
       />
       <UfcFightStrip fights={ufc.fights} />
       {ufc.notice ? (
@@ -592,7 +659,7 @@ function UfcShell({
             {ufc.sources.filter((s) => s.ok).map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
           </span>
         </div>
-        <div className="mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)]">
+        <div className="bg-background/95 sticky top-[7.25rem] z-20 mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)] backdrop-blur-md">
           {(
             [
               ["board", "Players"],
@@ -668,6 +735,9 @@ function Header({
   onRefresh,
   onPpr,
   refreshing,
+  sports = ["NFL", "NBA", "UFC"],
+  site = "DK",
+  onSite,
 }: {
   sport: Sport;
   data?: SlateData;
@@ -679,6 +749,9 @@ function Header({
   onRefresh: () => void;
   onPpr: () => void;
   refreshing: boolean;
+  sports?: Sport[];
+  site?: "DK" | "FD";
+  onSite?: (s: "DK" | "FD") => void;
 }) {
   const fetchedAt = sport === "NBA" ? nba?.fetchedAt ?? "" : sport === "UFC" ? ufc?.fetchedAt ?? "" : data?.fetchedAt ?? "";
   const [now, setNow] = useState(() => Date.parse(fetchedAt) || 0);
@@ -708,18 +781,18 @@ function Header({
           </div>
           <p className="text-muted-foreground mt-2 max-w-xl text-sm sm:text-base">
             {sport === "UFC"
-              ? "UFC 331. Van vs Pantoja. Spend the cap. Smash the card."
+              ? "Fight card. Spend the cap. Smash the slate."
               : sport === "NBA"
                 ? "Tonight’s board. Spend the cap. Smash the slate."
-                : "Read the tape. Spend the cap. Smash the slate."}
+                : `Week ${data?.week ?? ""}. Read the tape. Spend the cap. Smash the slate.`}
           </p>
         </div>
       </div>
       <div className="border-border/80 sticky top-0 z-30 border-t bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[1440px] items-center gap-3 px-4 pt-3 pb-2 lg:px-6">
+      <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3 pb-2 lg:px-6">
         <p className="display text-lg leading-none font-semibold tracking-wide">SNAPVALUE</p>
         <div className="flex rounded-md bg-secondary p-0.5 shadow-[var(--shadow-border)]">
-          {(["NFL", "NBA", "UFC"] as const).map((s) => (
+          {sports.map((s) => (
             <button
               key={s}
               type="button"
@@ -736,10 +809,27 @@ function Header({
         <span className="bg-secondary text-muted-foreground rounded-full px-3 py-1 font-mono text-xs">
           {sport === "NFL" ? `WK ${data?.week ?? ""}` : "DAILY"}
         </span>
-        <p className="text-faint hidden min-w-0 truncate font-mono text-[11px] md:block">
-          {fetchedAt ? `Updated ${relativeTime(fetchedAt, now)}` : ""}
+        <p className="text-faint order-last w-full min-w-0 font-mono text-[11px] sm:order-none sm:w-auto sm:flex-1 sm:truncate">
+          {fetchedAt ? `Updated ${relativeTime(fetchedAt, now)} · salaries · Vegas · news` : ""}
         </p>
         <div className="ml-auto flex items-center gap-2">
+          {sport === "NFL" && onSite ? (
+            <div className="flex rounded-md bg-secondary p-0.5">
+              {(["DK", "FD"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onSite(s)}
+                  className={cn(
+                    "h-8 rounded-sm px-2 text-[11px] font-semibold",
+                    site === s ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {sport === "NFL" ? (
             <Button variant={tab === "ppr" ? "default" : "secondary"} size="sm" onClick={onPpr}>
               Weekly PPR
@@ -797,7 +887,7 @@ function Header({
         ) : null}
         <p className="text-faint mt-2 font-mono text-[11px]">
           {sport === "UFC"
-            ? `DraftKings MMA ${ufc?.format === "showdown" ? "Captain 1.5×" : "Classic"} · ${formatCap(ufc?.salaryCap ?? 50000)} · main card · Crypto.com Arena`
+            ? `DraftKings MMA ${ufc?.format === "showdown" ? "Captain 1.5×" : "Classic"} · ${formatCap(ufc?.salaryCap ?? 50000)} · main card`
             : sport === "NBA"
               ? `DraftKings NBA Classic · ${formatCap(nba?.salaryCap ?? 50000)}`
               : `${data?.format === "showdown" ? "DraftKings Showdown · CPT 1.5×" : "DraftKings Classic"} · ${formatCap(data?.salaryCap ?? 50000)}`}
@@ -814,9 +904,9 @@ function UfcFightStrip({ fights }: { fights: UfcFight[] }) {
   const rows = [...fights].sort((a, b) => order[a.card] - order[b.card] || a.startTime.localeCompare(b.startTime));
   return (
     <div className="border-border/60 border-b">
-      <div className="mx-auto flex max-w-[1440px] gap-2 overflow-x-auto px-4 py-3 lg:px-6">
+      <div className="mx-auto flex max-w-[1440px] snap-x snap-mandatory gap-2 overflow-x-auto px-4 py-3 [scrollbar-width:none] lg:px-6 [&::-webkit-scrollbar]:hidden">
         {rows.map((f) => (
-          <div key={f.id} className="bg-card shrink-0 rounded-lg px-3 py-2 shadow-[var(--shadow-border)]">
+          <div key={f.id} className="bg-card min-w-[11.5rem] shrink-0 snap-start rounded-lg px-3 py-2 shadow-[var(--shadow-border)]">
             <p className="display text-sm leading-none font-semibold">
               {f.aName} <span className="text-faint font-sans text-[10px]">vs</span> {f.bName}
             </p>
@@ -840,9 +930,9 @@ function MatchupStrip({ games, weather = true }: { games: SlateData["games"]; we
   if (!games.length) return null;
   return (
     <div className="border-border/60 border-b">
-      <div className="mx-auto flex max-w-[1440px] gap-2 overflow-x-auto px-4 py-3 lg:px-6">
+      <div className="mx-auto flex max-w-[1440px] snap-x snap-mandatory gap-2 overflow-x-auto px-4 py-3 [scrollbar-width:none] lg:px-6 [&::-webkit-scrollbar]:hidden">
         {games.map((g) => (
-          <div key={g.id} className="bg-card shrink-0 rounded-lg px-3 py-2 shadow-[var(--shadow-border)]">
+          <div key={g.id} className="bg-card min-w-[11.5rem] shrink-0 snap-start rounded-lg px-3 py-2 shadow-[var(--shadow-border)]">
             <p className="display text-sm leading-none font-semibold">
               {g.awayAbbr} <span className="text-faint font-sans text-[10px]">@</span> {g.homeAbbr}
             </p>
@@ -902,10 +992,60 @@ function StatsBar({ data }: { data: SlateData }) {
         {summary.it}
       </span>
       <span className="min-w-0">
-        <span className="text-faint">SOURCES </span>
-        {live.map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
+        <details className="max-w-xl">
+          <summary className="cursor-pointer">
+            <span className="text-faint">DATA </span>
+            {live.length} sources
+          </summary>
+          <p className="mt-1">
+            {live.map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
+          </p>
+        </details>
       </span>
     </div>
+  );
+}
+
+function HowToStrip() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("snapvalue-howto-v1") === "1") return;
+    } catch {
+      return;
+    }
+    setOn(true);
+    const id = window.setTimeout(() => {
+      setOn(false);
+      try {
+        sessionStorage.setItem("snapvalue-howto-v1", "1");
+      } catch {
+        /* ignore */
+      }
+    }, 10000);
+    return () => window.clearTimeout(id);
+  }, []);
+  if (!on) return null;
+  return (
+    <p className="bg-ink/10 text-foreground mx-auto max-w-[1440px] px-4 py-2 text-center text-sm lg:px-6">
+      <span className="font-semibold">How to read this slate.</span> Val = pts per $1k · IT Factor = leverage smash, not chalk · Own% = field · CY = contract year
+    </p>
+  );
+}
+
+function InjuryStrip({ players }: { players: SlateData["players"] }) {
+  const flagged = players.filter((p) => {
+    const blob = `${p.injury ?? ""} ${p.status ?? ""}`.toLowerCase();
+    return /\bout\b|\bdoubt|\bquestion|\bq\b|\bir\b|\bpup\b|\bdnp\b/.test(blob) && p.injury;
+  });
+  if (!flagged.length) return null;
+  const shown = flagged.slice(0, 10);
+  return (
+    <p className="text-muted-foreground mx-auto max-w-[1440px] px-4 py-2 text-center text-xs lg:px-6">
+      <span className="text-warn font-semibold">News · </span>
+      {shown.map((p) => `${p.name} ${p.injury}`).join(" · ")}
+      {flagged.length > shown.length ? ` · +${flagged.length - shown.length}` : ""}
+    </p>
   );
 }
 

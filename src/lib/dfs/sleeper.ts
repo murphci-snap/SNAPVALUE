@@ -34,9 +34,7 @@ function cheapScore(p: Player): number {
 }
 
 function why(p: Player): string {
-  const core = `${p.value.toFixed(2)} pts/$1k · $${(p.salary / 1000).toFixed(1)}k`;
-  if (p.position === "QB") return `${core} · cheap / streaming QB — not FLEX`;
-  return `${core} · FLEX or last skill slot`;
+  return `${p.value.toFixed(2)} pts/$1k · $${(p.salary / 1000).toFixed(1)}k`;
 }
 
 export function markCheapImpact(players: Player[]) {

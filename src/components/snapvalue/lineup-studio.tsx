@@ -52,6 +52,8 @@ export function LineupStudio({
   const [copied, setCopied] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
   const [ledger, setLedger] = useState<LineupLedgerEntry[]>([]);
+  const [exposure, setExposure] = useState(1);
+  const [forceTeam, setForceTeam] = useState("");
   const reviewDefault = useMemo(() => slateReviewReady(players), [players]);
   const [reviewOn, setReviewOn] = useState(reviewDefault);
   const showdown = format === "showdown";
@@ -71,8 +73,10 @@ export function LineupStudio({
         excludes,
         contest: activeContest,
         format,
+        maxExposure: exposure,
+        forceTeam: forceTeam || undefined,
       }),
-    [players, count, seed, stack, locks, excludes, activeContest, format, showdown],
+    [players, count, seed, stack, locks, excludes, activeContest, format, showdown, exposure, forceTeam],
   );
 
   const reviews = useMemo(
@@ -126,7 +130,7 @@ export function LineupStudio({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-md bg-secondary p-1 shadow-[var(--shadow-border)]">
-            {[4, 6, 8].map((n) => (
+            {[1, 6, 8, 20].map((n) => (
               <button
                 key={n}
                 type="button"
@@ -152,6 +156,17 @@ export function LineupStudio({
           <Button size="sm" onClick={() => setSeed(Date.now())}>
             <RefreshCw />
             Shuffle
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              const it = [...players].filter((p) => p.itFactor && !excludes.includes(p.id)).sort((a, b) => b.value - a.value)[0];
+              if (it && !locks.includes(it.id)) onToggleLock(it.id);
+            }}
+          >
+            <Sparkles />
+            Build around IT
           </Button>
           {lineups.length ? (
             <>
@@ -195,6 +210,39 @@ export function LineupStudio({
               : "Showdown cash: chalk captain, spend the cap, high floors. CPT scores 1.5×. $50k."
             : CONTEST_META[activeContest].blurb}
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-faint text-[10px] tracking-[0.16em] uppercase">Max exposure</span>
+          {[0.25, 0.4, 1].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setExposure(n)}
+              className={cn(
+                "h-9 rounded-md px-3 text-xs font-medium",
+                exposure === n ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground",
+              )}
+            >
+              {n === 1 ? "No cap" : `${Math.round(n * 100)}%`}
+            </button>
+          ))}
+          {showdown ? null : (
+            <label className="ml-1 flex items-center gap-2 text-xs">
+              <span className="text-faint tracking-[0.16em] uppercase">Force stack</span>
+              <select
+                value={forceTeam}
+                onChange={(e) => setForceTeam(e.target.value)}
+                className="bg-secondary h-9 rounded-md px-2 text-sm"
+              >
+                <option value="">Any</option>
+                {[...new Set(players.map((p) => p.team))].sort().map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </div>
 
       <LineupWeeklyGradeCard entries={ledger} week={week} season={season} />

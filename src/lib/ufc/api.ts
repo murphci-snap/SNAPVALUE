@@ -252,9 +252,9 @@ function toOption(group: DkGroup): UfcSlateOption {
   const captain = isCaptainGroup(group);
   return {
     draftGroupId: group.draftGroupId,
-    label: captain ? "Captain" : "UFC 331",
+    label: captain ? "Captain" : "Main card",
     suffix: (group.startTimeSuffix || "").replace(/[()]/g, "").trim() || (captain ? "Captain" : "Main card"),
-    title: captain ? "Captain" : "UFC 331",
+    title: captain ? "Captain" : "Main card",
     subtitle: captain ? "CPT 1.5× · main card" : UFC_HEADLINE,
     startTime: group.minStartTime,
     gameCount: n,
@@ -264,7 +264,7 @@ function toOption(group: DkGroup): UfcSlateOption {
 
 function emptyNotice(games: number, salaries: boolean): string | null {
   if (!salaries) return "DraftKings salaries aren’t posted yet. Main-card fighters are on the board. Cash / GPP shells wait on salaries.";
-  if (!games) return "UFC 331 main card is loading. Switch to NFL if this is empty.";
+  if (!games) return "Fight card is loading. Switch to NFL if this is empty.";
   return null;
 }
 
@@ -626,9 +626,9 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
         : [
             {
               draftGroupId: 0,
-              label: "UFC 331",
+              label: "Main card",
               suffix: "Main card",
-              title: "UFC 331",
+              title: "Main card",
               subtitle: UFC_HEADLINE,
               startTime: fights[0]?.startTime ?? "",
               gameCount: fights.filter((f) => f.card === "main").length,
@@ -658,6 +658,6 @@ export async function loadUfcSlate(draftGroupId?: number, force?: boolean): Prom
     return value;
   } catch (err) {
     const raw = err instanceof Error ? err.message : "";
-    return { ok: false, sport: "UFC", error: raw || "Could not load UFC 331." };
+    return { ok: false, sport: "UFC", error: raw || "Could not load the fight card." };
   }
 }

@@ -12,7 +12,17 @@ export function generateLineups(
   players: Player[],
   count: number,
   seed: number,
-  opts?: { stackQb?: boolean; locks?: string[]; excludes?: string[]; contest?: ContestStyle; format?: SlateFormat },
+  opts?: {
+    stackQb?: boolean;
+    locks?: string[];
+    excludes?: string[];
+    contest?: ContestStyle;
+    format?: SlateFormat;
+    /** 0–1 share of the set any one player may appear in. */
+    maxExposure?: number;
+    /** Require a player from this team (QB if stacking). */
+    forceTeam?: string;
+  },
 ): Lineup[] {
   if (opts?.format === "showdown" || players.some((p) => p.showdownRole === "CPT")) {
     return generateShowdownLineups(players, count, seed, opts);
@@ -42,20 +52,32 @@ export function generateLineups(
 
   const results: Lineup[] = [];
   const seen = new Set<string>();
+  const usedCount = new Map<string, number>();
   let attempts = 0;
   const valueRate = contest === "milly" ? 0.55 : contest === "doubleup" ? 0.02 : contest === "small" ? 0.1 : 0.32;
+  const exposure = opts?.maxExposure ?? 1;
+  const cap = Math.max(locks.length ? 1 : 1, Math.ceil(count * Math.min(1, Math.max(0.05, exposure))));
+  const forceTeam = opts?.forceTeam;
 
-  while (results.length < count && attempts < count * 48) {
+  while (results.length < count && attempts < count * 64) {
     attempts++;
     const valueLean = rng() < valueRate;
     const built = buildOne(pool, locks, rng, { stackQb, valueLean, contest });
     if (!built) continue;
+    if (forceTeam) {
+      const teamPlayers = built.players.filter((lp) => lp.player.team === forceTeam);
+      if (!teamPlayers.length) continue;
+      if (stackQb && !teamPlayers.some((lp) => lp.player.position === "QB")) continue;
+    }
+    const over = built.players.some((lp) => (usedCount.get(lp.player.id) ?? 0) + 1 > cap && !lockIds.has(lp.player.id));
+    if (over) continue;
     const key = built.players
       .map((lp) => lp.player.id)
       .sort()
       .join("|");
     if (seen.has(key)) continue;
     seen.add(key);
+    for (const lp of built.players) usedCount.set(lp.player.id, (usedCount.get(lp.player.id) ?? 0) + 1);
     built.id = `L${results.length + 1}`;
     results.push(built);
   }

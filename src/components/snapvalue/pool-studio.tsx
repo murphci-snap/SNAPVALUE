@@ -313,6 +313,9 @@ export function PoolStudio({ games, week, season }: { games: Game[]; week: numbe
             ? `Week ${week}: cash Ticket 1. Hammers are leftover-schedule locks, not every 75% favorite. Used teams reset each season.`
             : `Two contests, same week. Survivor: pick a winner. Loser: pick a team to lose. Multiple tickets stay unique.`}
         </p>
+        <p className="text-faint mt-2 max-w-2xl text-xs">
+          Survivor results aren’t a public record yet. This is this week’s tickets, not a 0–0 grade.
+        </p>
         <PoolSizeBar poolSize={poolSize} setPoolSize={setPoolSize} />
       </header>
       <div className="grid gap-12 xl:grid-cols-2">

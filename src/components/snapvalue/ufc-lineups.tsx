@@ -90,7 +90,7 @@ export function UfcLineups({
     <section className="flex flex-col gap-3">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="display text-xs tracking-[0.18em] text-faint uppercase">Lineup lab · UFC 331 main card</p>
+          <p className="display text-xs tracking-[0.18em] text-faint uppercase">Lineup lab · main card</p>
           <h2 className="display text-2xl font-semibold">{showdown ? "Captain mode" : "Classic 6"}</h2>
         </div>
         <div className="flex flex-wrap gap-2">

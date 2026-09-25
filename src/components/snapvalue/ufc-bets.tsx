@@ -175,7 +175,7 @@ export function UfcBets({ data }: { data: UfcSlateData }) {
       </section>
 
       <p className="text-muted-foreground max-w-2xl text-sm">
-        UFC 331 desk. Price is the prior. Edge is fair vs posted. Empty is better than a forced pick. Fun only.
+        Fight desk. Price is the prior. Edge is fair vs posted. Empty is better than a forced pick. Fun only.
         {desk.oddsOk ? ` Sources ${desk.sources.join(" · ")}.` : " Odds feed is down — card is up, bets stay empty."}
       </p>
 

@@ -33,8 +33,6 @@ function whyBits(p: Player, games: Game[], _residual: number): string[] {
   const bits: string[] = [];
   const g = games.find((x) => x.homeAbbr === p.team || x.awayAbbr === p.team);
   const imp = implied(p, games);
-  if (p.salary >= 4800 && p.salary <= 7800) bits.push(`$${(p.salary / 1000).toFixed(1)}k · mid-price volume`);
-  else if (p.salary >= 5000 && p.salary <= 8200) bits.push(`$${(p.salary / 1000).toFixed(1)}k · Leverage smash`);
   const atdExp = expectedAtd(p);
   if (p.anytimeTd != null && p.anytimeTd >= atdExp + 0.06) {
     bits.push(`${Math.round(p.anytimeTd * 100)}% ATD vs typical for this salary`);

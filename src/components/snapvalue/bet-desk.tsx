@@ -1,21 +1,51 @@
 import { useEffect, useMemo, useState } from "react";
-import { buildWeeklyDesk } from "@/lib/dfs/desk";
+import { buildWeeklyDesk, type DeskBet } from "@/lib/dfs/desk";
 import { deskTighten, loadLedger, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
 import { formatAmerican, formatPct } from "@/lib/dfs/markets";
 import type { Game, Player } from "@/lib/dfs/types";
 import { BetDeskWeeklyGrade } from "./bet-desk-weekly-grade";
 import { BetCard, Conf, PropCard, TdLegCard } from "./bet-desk-cards";
 
+function FadeBlock({ fades }: { fades: DeskBet[] }) {
+  const shorts = fades.filter((b) => b.id.startsWith("fade-short"));
+  const rest = fades.filter((b) => !b.id.startsWith("fade-short"));
+  const teams = shorts.map((b) => b.title.replace(/^Fade\s+/, ""));
+  return (
+    <section>
+      <h2 className="display text-2xl font-semibold">Sit these out</h2>
+      <p className="text-muted-foreground mb-4 max-w-2xl text-sm">Trap spots. Public will bet them. We do not. 0u.</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        {shorts.length ? (
+          <article className="rounded-xl bg-card p-4 shadow-[var(--shadow-border)]">
+            <p className="text-faint text-[10px] tracking-[0.18em] uppercase">Short favorites · coin-flip TD games</p>
+            <h3 className="display mt-1 text-3xl leading-none font-semibold">{teams.join(" · ")}</h3>
+            <p className="text-muted-foreground mt-3 text-sm">
+              Same story on each: a short favorite in a coin-flip touchdown market. Casual money piles on. We stand down.
+            </p>
+          </article>
+        ) : null}
+        {rest.map((bet) => (
+          <ol key={bet.id} className="grid">
+            <BetCard bet={bet} kicker="Fade" />
+          </ol>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function BetDesk({
   games,
   players,
   week,
   season,
+  site = "DK",
 }: {
   games: Game[];
   players: Player[];
   week: number;
   season: number;
+  site?: "DK" | "FD";
 }) {
   const [history, setHistory] = useState<GradedBet[]>([]);
   const [ledger, setLedger] = useState<GradedBet[]>([]);
@@ -106,19 +136,7 @@ export function BetDesk({
         </section>
       ) : null}
 
-      {desk.fades.length > 0 ? (
-        <section>
-          <h2 className="display text-2xl font-semibold">Sit these out</h2>
-          <p className="text-muted-foreground mb-4 max-w-2xl text-sm">
-            Trap spots. Public will bet them. We do not.
-          </p>
-          <ol className="grid gap-3 md:grid-cols-3">
-            {desk.fades.map((bet) => (
-              <BetCard key={bet.id} bet={bet} kicker="Fade" />
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      {desk.fades.length > 0 ? <FadeBlock fades={desk.fades} /> : null}
 
       <section>
         <h2 className="display text-2xl font-semibold">Player props</h2>
@@ -127,9 +145,13 @@ export function BetDesk({
         </p>
         {desk.playerProps.length === 0 ? (
           <p className="text-muted-foreground text-sm">No two-book yard props clearing the bar.</p>
+        ) : site === "FD" && desk.playerProps.filter((b) => /fanduel/i.test(b.books)).length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            FanDuel isn’t on a two-book prop that clears the bar. Lineups stay DraftKings until FD salaries post.
+          </p>
         ) : (
           <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {desk.playerProps.map((bet) => (
+            {(site === "FD" ? desk.playerProps.filter((b) => /fanduel/i.test(b.books)) : desk.playerProps).map((bet) => (
               <PropCard
                 key={bet.id}
                 bet={bet}

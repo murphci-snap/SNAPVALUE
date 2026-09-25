@@ -1,6 +1,24 @@
 import { useMemo, useState } from "react";
 import { emptyGradeHint, ledgerSummary, loadStampedBets, type GradedBet } from "@/lib/dfs/bet-ledger";
 
+function recentBetWeeks(bets: GradedBet[], season: number, current: number) {
+  const by = new Map<number, { w: number; l: number }>();
+  for (const b of bets) {
+    if (b.season !== season) continue;
+    if (b.result !== "win" && b.result !== "loss") continue;
+    const row = by.get(b.week) ?? { w: 0, l: 0 };
+    if (b.result === "win") row.w += 1;
+    else row.l += 1;
+    by.set(b.week, row);
+  }
+  const slots: { week: number; label: string }[] = [];
+  for (let w = Math.max(1, current); w >= 1 && slots.length < 8; w--) {
+    const row = by.get(w);
+    slots.push({ week: w, label: row && row.w + row.l ? `${row.w}-${row.l}` : "empty" });
+  }
+  return slots;
+}
+
 export function BetDeskWeeklyGrade({
   ledger,
   week,
@@ -21,9 +39,9 @@ export function BetDeskWeeklyGrade({
         <div>
           <p className="text-faint text-[10px] tracking-[0.18em] uppercase">Weekly grade</p>
           <h2 className="display text-2xl leading-none font-semibold">
-            WK {week} {rec.week.w}-{rec.week.l}
+            {rec.week.w + rec.week.l === 0 ? `WK ${week} · empty` : `WK ${week} ${rec.week.w}-${rec.week.l}`}
             <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
-              season {rec.season.w}-{rec.season.l}
+              {rec.season.w + rec.season.l === 0 ? "no graded weeks yet" : `season ${rec.season.w}-${rec.season.l}`}
             </span>
           </h2>
         </div>
@@ -58,6 +76,11 @@ export function BetDeskWeeklyGrade({
           }) || "Nothing graded yet. Empty bets are fine — grades fill when games are final."}
         </p>
       )}
+      <p className="text-muted-foreground mt-2 font-mono text-[11px]">
+        {recentBetWeeks(ledger, season, week)
+          .map((slot) => `WK${slot.week} ${slot.label}`)
+          .join(" · ")}
+      </p>
       {tightenNotes.length ? (
         <p className="text-ink mt-2 text-xs">{tightenNotes.join(" · ")}</p>
       ) : null}

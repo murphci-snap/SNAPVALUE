@@ -32,6 +32,7 @@ export function PlayerBoard({
 }) {
   const [pos, setPos] = useState<PosFilter>("ALL");
   const [q, setQ] = useState("");
+  const [compact, setCompact] = useState(false);
   const [sort, setSort] = useState<SortKey>("projection");
   const [dir, setDir] = useState<"desc" | "asc">("desc");
   const [valuesOnly, setValuesOnly] = useState(false);
@@ -238,6 +239,16 @@ export function PlayerBoard({
         >
           IT Factor
         </button>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-9 items-center rounded-md px-3 text-xs font-medium transition-colors duration-150",
+            compact ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground shadow-[var(--shadow-border)]",
+          )}
+          onClick={() => setCompact((v) => !v)}
+        >
+          Compact table
+        </button>
         <div className="min-w-48 flex-1 basis-full sm:basis-auto">
           <Input
             value={q}
@@ -248,8 +259,12 @@ export function PlayerBoard({
         </div>
       </div>
       <CyLegend />
-      <ItFactorRack data={data} pos={pos === "CPT" ? "ALL" : pos} lens={lens} onSelect={setSelected} />
-      <CheapImpactRack data={data} pos={pos === "CPT" ? "ALL" : pos} onSelect={setSelected} />
+      {compact ? null : (
+        <>
+          <ItFactorRack data={data} pos={pos === "CPT" ? "ALL" : pos} lens={lens} onSelect={setSelected} />
+          <CheapImpactRack data={data} pos={pos === "CPT" ? "ALL" : pos} onSelect={setSelected} />
+        </>
+      )}
 
       <section>
         <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -302,7 +317,7 @@ export function PlayerBoard({
       <div className="overflow-hidden rounded-xl bg-card shadow-[var(--shadow-border)]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-field text-muted-foreground text-[11px] tracking-wide uppercase">
+            <thead className="bg-field text-muted-foreground sticky top-0 z-10 text-[11px] tracking-wide uppercase">
               <tr>
                 <Th onClick={() => toggleSort("name")} active={sort === "name"}>
                   Player {sortIcon("name")}
@@ -325,7 +340,7 @@ export function PlayerBoard({
                 <Th onClick={() => toggleSort("oppRank")} active={sort === "oppRank"}>
                   vs DEF {sortIcon("oppRank")}
                 </Th>
-                <th className="px-3 py-3 font-medium">2025</th>
+                {compact ? null : <th className="px-3 py-3 font-medium">2025</th>}
                 <th className="px-3 py-3 font-medium"> </th>
               </tr>
             </thead>
@@ -401,9 +416,11 @@ export function PlayerBoard({
                     <td className="px-3">
                       <Badge variant={tone}>{matchupLabel(p)}</Badge>
                     </td>
+                    {compact ? null : (
                     <td className="text-muted-foreground px-3 font-mono text-[11px] tabular-nums">
                       {seasonPreview(p)}
                     </td>
+                    )}
                     <td className="px-2" onClick={(e) => e.stopPropagation()}>
                       <div className="flex">
                         <button
@@ -448,8 +465,11 @@ export function PlayerBoard({
           locked={locks.includes(selected.id)}
           onClose={() => setSelected(null)}
           onLock={() => onToggleLock(selected.id)}
+          excluded={excludes.includes(selected.id)}
+          onExclude={() => onToggleExclude(selected.id)}
           it={itIds.has(selected.id)}
           why={itWhy(selected, data.games, lens)}
+          mates={data.players.filter((p) => p.id !== selected.id && p.gameName && p.gameName === selected.gameName).slice(0, 6)}
         />
       )}
     </div>
@@ -519,18 +539,24 @@ function PlayerDetail({
   player,
   games,
   locked,
+  excluded,
   onClose,
   onLock,
+  onExclude,
   it,
   why,
+  mates,
 }: {
   player: Player;
   games: SlateData["games"];
   locked: boolean;
+  excluded: boolean;
   onClose: () => void;
   onLock: () => void;
+  onExclude: () => void;
   it: boolean;
   why: string;
+  mates?: Player[];
 }) {
   const d = player.defense;
   return (
@@ -553,6 +579,9 @@ function PlayerDetail({
               {playerSpotLine(player, { games })} · {kickoffLabel(player.startTime)}
             </p>
             {player.contractYear ? <p className="text-[#f0c14b] mt-1 text-xs font-medium">{player.contractYear.blurb}</p> : null}
+            {player.injury || player.status ? (
+              <p className="text-warn mt-1 text-sm">{[player.status, player.injury].filter(Boolean).join(" · ")}</p>
+            ) : null}
           </div>
           <button type="button" onClick={onClose} className="relative size-11 text-muted-foreground" aria-label="Close">
             <X className="mx-auto size-5" />
@@ -579,6 +608,19 @@ function PlayerDetail({
             {why}
           </p>
         )}
+        {mates && mates.length ? (
+          <p className="text-muted-foreground mt-3 text-sm">
+            <span className="text-faint display tracking-[0.14em] uppercase">Stack with · </span>
+            {mates.map((m) => `${m.name} ${m.position}`).join(" · ")}
+          </p>
+        ) : null}
+        <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
+          Salary {formatSalary(player.salary)} this week. Snap charts and salary history aren’t on this feed.
+          {player.stats && player.position !== "DST"
+            ? ` 2025 volume: ${player.stats.games}g · ${Math.round(player.stats.targets)} tgt · ${Math.round(player.stats.rushAtt)} car.`
+            : ""}
+          {player.ownership != null ? ` Own ${player.ownership.toFixed(0)}% (${player.ownershipSource ?? "model"}).` : ""}
+        </p>
         {player.cheapImpact && player.cheapImpactWhy && (
           <p className="text-value mt-3 text-sm">
             <span className="display tracking-[0.14em] uppercase">Bargain bin · </span>
@@ -674,8 +716,8 @@ function PlayerDetail({
           <Button onClick={onLock} variant={locked ? "value" : "default"} className="flex-1">
             {locked ? "Locked in lineups" : "Lock for lineups"}
           </Button>
-          <Button variant="secondary" onClick={onClose} className="flex-1">
-            Close
+          <Button onClick={onExclude} variant="secondary" className="flex-1">
+            {excluded ? "Excluded" : "Exclude"}
           </Button>
         </div>
       </div>

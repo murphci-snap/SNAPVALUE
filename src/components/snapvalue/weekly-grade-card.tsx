@@ -6,6 +6,23 @@ import {
 } from "@/lib/dfs/lineup-ledger";
 import { cn } from "@/lib/utils";
 
+function recentLineupWeeks(entries: LineupLedgerEntry[], season: number, current: number) {
+  const slots: string[] = [];
+  for (let w = Math.max(1, current); w >= 1 && slots.length < 8; w--) {
+    const rows = entries.filter(
+      (e) =>
+        e.sport === "NFL" &&
+        e.season === season &&
+        e.week === w &&
+        (e.verdict === "cash" || e.verdict === "miss"),
+    );
+    const cash = rows.filter((e) => e.verdict === "cash").length;
+    const miss = rows.filter((e) => e.verdict === "miss").length;
+    slots.push(rows.length ? `WK${w} ${cash}-${miss}` : `WK${w} empty`);
+  }
+  return slots;
+}
+
 /** Weekly grade card for NFL bet desk — hits by market + units. */
 export function BetWeeklyGradeCard({
   bets,
@@ -93,10 +110,11 @@ export function LineupWeeklyGradeCard({
         <div>
           <p className="text-faint text-[10px] tracking-[0.18em] uppercase">Weekly grade</p>
           <h2 className="display text-2xl leading-none font-semibold">
-            WK {week} cash {track.week.cash} · miss {track.week.miss}
+            {track.week.n === 0 ? `WK ${week} · empty` : `WK ${week} cash ${track.week.cash} · miss ${track.week.miss}`}
             <span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
-              season {track.season.cash}-{track.season.miss}
-              {track.season.borderline ? ` · ${track.season.borderline} board` : ""}
+              {track.season.n === 0
+                ? "no graded weeks yet"
+                : `season ${track.season.cash}-${track.season.miss}${track.season.borderline ? ` · ${track.season.borderline} board` : ""}`}
             </span>
           </h2>
         </div>
@@ -113,6 +131,9 @@ export function LineupWeeklyGradeCard({
             .join(" · ")}
         </p>
       ) : null}
+      <p className="text-muted-foreground mt-2 font-mono text-[11px]">
+        {recentLineupWeeks(entries, season, week).join(" · ")}
+      </p>
       {track.weekRows.length ? (
         <ol className="mt-3 flex flex-col gap-1.5">
           {track.weekRows.slice(0, 6).map((e) => (
