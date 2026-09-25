@@ -100,6 +100,7 @@ export function publicAppHost(hostHeader) {
     .toLowerCase();
   if (!host || !/^[a-z0-9.-]+$/.test(host) || !host.includes(".")) return "";
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return "";
+  if (host === "snapvalue-dfs.vercel.app" || host === "snapvalue.vercel.app") return host;
   if (isVercelSystemHost(host)) return "";
   return host;
 }
@@ -256,6 +257,7 @@ export function readOgSite(cwd = process.cwd()) {
 export function ogCardPublicPath(cwd = process.cwd()) {
   if (existsSync(join(cwd, "public/og.jpg"))) return "/og.jpg";
   if (existsSync(join(cwd, "public/og.png"))) return "/og.png";
+  if (existsSync(join(cwd, "public/command-center.jpg"))) return "/command-center.jpg";
   return "";
 }
 

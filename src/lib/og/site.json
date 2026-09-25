@@ -1,6 +1,7 @@
 {
-  "title": "SNAPVALUE",
-  "description": "DFS value, survivor & loser pools, weekly best bets",
+  "title": "SNAPVALUE — NFL DFS values, lineups, survivor",
+  "description": "Weekly NFL DFS command center — values, lineups, survivor, and bets. For fun only.",
   "type": "website",
-  "card": "custom"
+  "card": "custom",
+  "image": "/command-center.jpg"
 }
