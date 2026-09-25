@@ -14,6 +14,7 @@ import type { Game, Lineup, Player, SlateFormat } from "@/lib/dfs/types";
 import { cn, formatPts, formatSalary, formatUsd, playerSpotLine } from "@/lib/utils";
 import { CyBadge } from "./cy-badge";
 import { LineupWeeklyGradeCard } from "./weekly-grade-card";
+import { FD_CAP, fdPool } from "@/lib/dfs/site-salary";
 
 const CLASSIC_CONTESTS: ContestStyle[] = ["single", "milly", "small", "doubleup"];
 const SHOWDOWN_CONTESTS: ContestStyle[] = ["doubleup", "milly"];
@@ -35,6 +36,7 @@ export function LineupStudio({
   format = "classic",
   week = 1,
   season = 2026,
+  site = "DK",
 }: {
   players: Player[];
   games?: Game[];
@@ -44,6 +46,7 @@ export function LineupStudio({
   format?: SlateFormat;
   week?: number;
   season?: number;
+  site?: "DK" | "FD";
 }) {
   const [count, setCount] = useState(6);
   const [stack, setStack] = useState(true);
@@ -57,6 +60,8 @@ export function LineupStudio({
   const reviewDefault = useMemo(() => slateReviewReady(players), [players]);
   const [reviewOn, setReviewOn] = useState(reviewDefault);
   const showdown = format === "showdown";
+  const fd = site === "FD" && !showdown;
+  const pool = useMemo(() => (fd ? fdPool(players) : players), [fd, players]);
   const contests = showdown ? SHOWDOWN_CONTESTS : CLASSIC_CONTESTS;
   const activeContest = showdown && contest !== "doubleup" && contest !== "milly" ? "doubleup" : contest;
   const gameCount = games.length || new Set(players.map((p) => p.gameName).filter(Boolean)).size || 13;
@@ -67,7 +72,7 @@ export function LineupStudio({
 
   const lineups = useMemo(
     () =>
-      generateLineups(players, count, seed, {
+      generateLineups(pool, count, seed, {
         stackQb: stack && !showdown,
         locks,
         excludes,
@@ -75,8 +80,9 @@ export function LineupStudio({
         format,
         maxExposure: exposure,
         forceTeam: forceTeam || undefined,
+        salaryCap: fd ? FD_CAP : undefined,
       }),
-    [players, count, seed, stack, locks, excludes, activeContest, format, showdown, exposure, forceTeam],
+    [pool, count, seed, stack, locks, excludes, activeContest, format, showdown, exposure, forceTeam, fd],
   );
 
   const reviews = useMemo(
@@ -161,7 +167,7 @@ export function LineupStudio({
             variant="secondary"
             size="sm"
             onClick={() => {
-              const it = [...players].filter((p) => p.itFactor && !excludes.includes(p.id)).sort((a, b) => b.value - a.value)[0];
+              const it = [...pool].filter((p) => p.itFactor && !excludes.includes(p.id)).sort((a, b) => b.value - a.value)[0];
               if (it && !locks.includes(it.id)) onToggleLock(it.id);
             }}
           >

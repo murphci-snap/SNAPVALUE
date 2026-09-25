@@ -22,6 +22,8 @@ export function generateLineups(
     maxExposure?: number;
     /** Require a player from this team (QB if stacking). */
     forceTeam?: string;
+    /** DraftKings is 50000. FanDuel classic is 60000. */
+    salaryCap?: number;
   },
 ): Lineup[] {
   if (opts?.format === "showdown" || players.some((p) => p.showdownRole === "CPT")) {
@@ -62,7 +64,7 @@ export function generateLineups(
   while (results.length < count && attempts < count * 64) {
     attempts++;
     const valueLean = rng() < valueRate;
-    const built = buildOne(pool, locks, rng, { stackQb, valueLean, contest });
+    const built = buildOne(pool, locks, rng, { stackQb, valueLean, contest, cap: opts?.salaryCap });
     if (!built) continue;
     if (forceTeam) {
       const teamPlayers = built.players.filter((lp) => lp.player.team === forceTeam);

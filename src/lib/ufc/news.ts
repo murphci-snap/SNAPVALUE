@@ -1,7 +1,6 @@
-import { getHtml, getJson, getText, settled } from "@/lib/dfs/http";
-import { lastNameOf } from "./scoring";
+import { getJson, getText, settled } from "@/lib/dfs/http";
 import { normalizeName } from "@/lib/utils";
-import { UFC_331_SCRATCHED_SEED, ufc331RosterKeys } from "./constants";
+import { UFC_HEADLINE, UFC_LIVE_KEYS } from "./constants";
 
 export type UfcPullout = {
   names: string[];
@@ -26,19 +25,11 @@ type Item = { title: string; summary: string; date: string; source: string; url:
 
 const ESPN_H = { Referer: "https://www.espn.com/mma/fightcenter", Origin: "https://www.espn.com" };
 
-const EVENT_RE = /ufc\s*331|van vs\.?\s*pantoja/i;
+const EVENT_RE = /rosas|barcelos|fight night/i;
 const PULL_RE =
-  /scrapped from|removed from|pulled out of|pull(?:ed|ing) out of|withdraws? from|withdrawn from|out of (?:his |their |the )?(?:ufc\s*)?331|no longer competing|off the card|fight has been cancel+ed|bout (?:is |was )?(?:off|scrapped|cancel+ed)|withdraws? (?:again )?(?:from|ahead of)/i;
+  /scrapped|removed from|pulled out of|pull(?:ed|ing) out of|withdraws? from|withdrawn from|no longer competing|off the card|fight has been cancel+ed|bout (?:is |was )?(?:off|scrapped|cancel+ed)|withdraws? (?:again )?(?:from|ahead of)/i;
 const SKIP_RE = /\bskit\b|\bparody\b|\bsimulation\b|picks are out|video out now|weigh-ins will|full card breakdown/i;
 const TRUSTED_RE = /mma fighting|mmafighting|mma junkie|mmajunkie|espn|ufc\.com|mmaweekly|bloody elbow|sherdog|ufc official|@ufc\b|ufconparamount|ufc on paramount/i;
-
-const SEED: UfcPullout = {
-  names: ["ortega", "moicano"],
-  source: "MMA Fighting",
-  date: "2026-09-14",
-  title: "Renato Moicano vs. Brian Ortega scrapped from UFC 331; Moicano gets moved to new card",
-  url: "https://www.mmafighting.com/ufc/510318/renato-moicano-vs-brian-ortega-scrapped-from-ufc-331-moicano-gets-moved-to-new-card",
-};
 
 const NEWS_TTL_MS = 4 * 60 * 1000;
 type NewsHit = { at: number; value: UfcCardTrust };
@@ -130,10 +121,8 @@ async function espnNews(): Promise<Item[]> {
   }));
 }
 
-async function ufcEventStale(keys: string[]): Promise<string[]> {
-  const html = await getHtml("https://www.ufc.com/event/ufc-331", 9000);
-  const n = normalizeName(html);
-  return keys.filter((k) => n.includes(k));
+function rosterKeys(): string[] {
+  return UFC_LIVE_KEYS.filter((k) => k.length >= 5);
 }
 
 function formatWhen(iso: string): string {
@@ -146,24 +135,23 @@ export async function loadUfcCardNews(): Promise<UfcCardTrust> {
   const hit = g.__snapUfcNews;
   if (hit && Date.now() - hit.at < NEWS_TTL_MS) return hit.value;
 
-  const roster = ufc331RosterKeys();
+  const roster = rosterKeys();
   const queries = [
     "https://www.mmafighting.com/rss/current.xml",
-    "https://news.google.com/rss/search?q=UFC+331+(scrapped+OR+withdrawn+OR+pullout+OR+%22pulled+out%22+OR+%22off+the+card%22)&hl=en-US&gl=US&ceid=US:en",
-    "https://news.google.com/rss/search?q=UFC+331+(@ufc+OR+@UFConParamount+OR+site:x.com+OR+site:twitter.com)+(out+OR+pulled+OR+withdrawn+OR+scrapped)&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=Rosas+Barcelos+(withdrawn+OR+scrapped+OR+%22pulled+out%22+OR+%22off+the+card%22+OR+cancelled)&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=%22Fight+Night%22+(Rosas+OR+Barcelos)+(@ufc+OR+site:x.com)+(out+OR+pulled+OR+withdrawn+OR+scrapped)&hl=en-US&gl=US&ceid=US:en",
   ];
 
-  const [mmaf, g1, g2, espn, stale] = await Promise.all([
+  const [mmaf, g1, g2, espn] = await Promise.all([
     settled(getText(queries[0]!, {}, 8000).then((xml) => parseAtom(xml, "MMA Fighting"))),
     settled(getText(queries[1]!, {}, 8000).then((xml) => parseRss(xml, "Google News"))),
     settled(getText(queries[2]!, {}, 8000).then((xml) => parseRss(xml, "X via Google News"))),
     settled(espnNews()),
-    settled(ufcEventStale(UFC_331_SCRATCHED_SEED)),
   ]);
 
   const items = [...(mmaf ?? []), ...(g1 ?? []), ...(g2 ?? []), ...(espn ?? [])];
-  const found: UfcPullout[] = [SEED];
-  const seen = new Set<string>([`seed:${SEED.title}`]);
+  const found: UfcPullout[] = [];
+  const seen = new Set<string>();
 
   for (const item of items) {
     if (!isPulloutItem(item) || !isTrusted(item)) continue;
@@ -182,32 +170,22 @@ export async function loadUfcCardNews(): Promise<UfcCardTrust> {
     });
   }
 
-  const scratchedKeys = [...new Set(found.flatMap((f) => f.names))];
-  const primary = found[0]!;
-  const staleEventPage = stale ?? [];
-  const xItems = (g2 ?? []).filter((i) => /x\.com|twitter\.com|@ufc|paramount/i.test(`${i.source} ${i.title} ${i.url}`));
-  const officialX = xItems.filter((i) => isPulloutItem(i) && /@ufc\b|ufconparamount|ufc on paramount/i.test(`${i.title} ${i.source}`));
-
-  const parts = [
-    `Card rechecked ${formatWhen(new Date().toISOString())}.`,
-    `Trusted: ${primary.source} ${primary.date} — ${primary.title}.`,
-    staleEventPage.length
-      ? `ufc.com event page still lists ${staleEventPage.join("/")} — dropped per news, not the stale event page.`
-      : "ufc.com event page does not list the pulled bout.",
-    officialX.length
-      ? `Official X pullout: ${officialX[0]!.title.slice(0, 100)}.`
-      : "Official @ufc / @UFConParamount: no new pullout posts this check.",
-  ];
+  const scratchedKeys = [...new Set(found.flatMap((f) => f.names))].filter((k) => roster.includes(k));
+  const primary = found[0];
+  const when = formatWhen(new Date().toISOString());
+  const note = scratchedKeys.length
+    ? `Card rechecked ${when}. Pulled from ${UFC_HEADLINE}: ${scratchedKeys.join(", ")}.${primary ? ` ${primary.source}: ${primary.title}` : ""}`
+    : `Card rechecked ${when}. ${UFC_HEADLINE} is the live Fight Night. No pullouts on this card.`;
 
   const value: UfcCardTrust = {
     checkedAt: new Date().toISOString(),
-    trustedSource: primary.source,
-    trustedDate: primary.date,
-    trustedTitle: primary.title,
+    trustedSource: primary?.source ?? "ESPN",
+    trustedDate: primary?.date ?? new Date().toISOString().slice(0, 10),
+    trustedTitle: primary?.title ?? UFC_HEADLINE,
     scratched: found,
     scratchedKeys,
-    staleEventPage,
-    note: parts.join(" "),
+    staleEventPage: [],
+    note,
   };
   g.__snapUfcNews = { at: Date.now(), value };
   return value;

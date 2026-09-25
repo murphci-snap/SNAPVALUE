@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { loadSlate } from "@/lib/dfs/api";
+import { applyFanDuelSalaries, loadFanDuelSalaries } from "@/lib/dfs/fanduel-salaries";
+import { loadRecentForm } from "@/lib/dfs/recent-form";
+import { savePublicHistory } from "@/lib/dfs/public-book.server";
 import type { SlateWindow } from "@/lib/dfs/types";
 
 const cors = {
@@ -38,6 +41,17 @@ export const Route = createFileRoute("/api/slate")({
           winRaw === "sun1" ? "early" : winRaw === "sun4" ? "afternoon" : winRaw;
         const window = aliased && WINDOWS.has(aliased as SlateWindow) ? (aliased as SlateWindow) : undefined;
         const data = await loadSlate(Number.isFinite(draftGroupId) ? draftGroupId : undefined, force, window);
+        if (data.ok) {
+          const gameName = data.format === "showdown" ? data.games[0]?.name : undefined;
+          const [salaries, snaps] = await Promise.all([
+            loadFanDuelSalaries(data.format ?? "classic", gameName).catch(() => new Map<string, number>()),
+            loadRecentForm(data.players, data.season, data.week).catch(() => 0),
+          ]);
+          const fd = applyFanDuelSalaries(data.players, salaries);
+          data.sources.push({ id: "fanduel-salaries", label: "FanDuel salaries", ok: fd > 0, players: fd });
+          data.sources.push({ id: "sleeper-snaps", label: "Sleeper snaps", ok: snaps > 0, players: snaps });
+          data.publicHistory = await savePublicHistory(data);
+        }
         const headers = {
           ...cors,
           "Cache-Control": data.ok

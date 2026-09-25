@@ -225,6 +225,74 @@ export function settleDesk(opts: {
   return store.bets;
 }
 
+export interface PublicLeg {
+  id: string;
+  market: string;
+  pick: string;
+  unit: number;
+  result: GradeResult | "open";
+}
+
+/** Same card for every visitor. Does not read or write this browser's ledger. */
+export function gradePublicDesk(opts: {
+  desk: WeeklyDesk;
+  games: Game[];
+  players: Player[];
+}): PublicLeg[] {
+  const legs: PublicLeg[] = [];
+  const push = (id: string, market: string, pick: string, unitStr: string | undefined, result: GradeResult | null) => {
+    const unit = parseUnits(unitStr);
+    if (unit <= 0) return;
+    legs.push({ id, market, pick, unit, result: result ?? "open" });
+  };
+  for (const b of [...opts.desk.bestBets, opts.desk.spreadLock, opts.desk.moneylineDog, ...opts.desk.playerProps]) {
+    if (!b) continue;
+    let r: GradeResult | null = null;
+    if (b.market === "spread") r = gradeSpread(b, opts.games);
+    else if (b.market === "total") r = gradeTotal(b, opts.games);
+    else if (b.market === "moneyline") r = gradeMl(b, opts.games);
+    else if (b.market === "prop") r = gradeProp(b, opts.players, opts.games);
+    push(b.id, b.market, b.pick, b.unit, r);
+  }
+  if (opts.desk.atdParlay) {
+    push(
+      "atd-2",
+      "atd",
+      opts.desk.atdParlay.legs.map((l) => l.name).join(" + "),
+      opts.desk.atdParlay.unit ?? "0.5u",
+      gradeParlay(opts.desk.atdParlay, opts.players, opts.games, false),
+    );
+  }
+  if (opts.desk.atdParlay3) {
+    push(
+      "atd-3",
+      "atd3",
+      opts.desk.atdParlay3.legs.map((l) => l.name).join(" + "),
+      opts.desk.atdParlay3.unit ?? "0.25u",
+      gradeParlay(opts.desk.atdParlay3, opts.players, opts.games, false),
+    );
+  }
+  if (opts.desk.multiTdParlay) {
+    push(
+      "multi-td",
+      "multi_td",
+      opts.desk.multiTdParlay.legs.map((l) => l.name).join(" + "),
+      opts.desk.multiTdParlay.unit ?? "0.25u",
+      gradeParlay(opts.desk.multiTdParlay, opts.players, opts.games, true),
+    );
+  }
+  if (opts.desk.lottoTicket) {
+    push(
+      "lotto",
+      "lotto",
+      opts.desk.lottoTicket.legs.map((l) => l.name).join(" + "),
+      opts.desk.lottoTicket.unit ?? "0.1u",
+      gradeParlay(opts.desk.lottoTicket, opts.players, opts.games, false),
+    );
+  }
+  return legs;
+}
+
 export function ledgerSummary(bets: GradedBet[], week: number, season: number) {
   const decided = bets.filter((b) => b.result === "win" || b.result === "loss");
   const weekBets = decided.filter((b) => b.week === week && b.season === season);

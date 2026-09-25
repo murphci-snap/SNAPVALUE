@@ -13,23 +13,34 @@ import { cn, formatPts, formatSalary, playerSpotLine } from "@/lib/utils";
 import { CheapImpactRack } from "./cheap-impact-rack";
 import { CyBadge, CyLegend } from "./cy-badge";
 import { ItFactorRack } from "./it-factor-rack";
+import { asFdPlayer } from "@/lib/dfs/site-salary";
 
 type SortKey = "projection" | "salary" | "value" | "fppg" | "oppRank" | "name" | "ownership";
 type PosFilter = Position | "ALL" | "CPT";
 
 export function PlayerBoard({
-  data,
+  data: slate,
   locks,
   excludes,
   onToggleLock,
   onToggleExclude,
+  site = "DK",
 }: {
   data: SlateData;
   locks: string[];
   excludes: string[];
   onToggleLock: (id: string) => void;
   onToggleExclude: (id: string) => void;
+  site?: "DK" | "FD";
 }) {
+  const data = useMemo(() => {
+    if (site !== "FD") return slate;
+    const players = slate.players.flatMap((p) => {
+      const next = asFdPlayer(p);
+      return next ? [next] : [];
+    });
+    return { ...slate, players, salaryCap: 60000 };
+  }, [slate, site]);
   const [pos, setPos] = useState<PosFilter>("ALL");
   const [q, setQ] = useState("");
   const [compact, setCompact] = useState(false);
@@ -154,6 +165,13 @@ export function PlayerBoard({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
+      {site === "FD" ? (
+        <p className="text-muted-foreground text-sm">
+          {data.players.length
+            ? "FanDuel salaries · $60,000 cap. Points are the DraftKings number minus half a point per catch."
+            : "FanDuel hasn’t priced this slate. Switch back to DK."}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {POS_FILTER.map((p) => (
           <button
@@ -614,8 +632,40 @@ function PlayerDetail({
             {mates.map((m) => `${m.name} ${m.position}`).join(" · ")}
           </p>
         ) : null}
+        <h4 className="display mt-5 text-lg font-semibold">Recent weeks</h4>
+        {player.recentForm && player.recentForm.length ? (
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-faint text-[10px] tracking-wide uppercase">
+                <tr>
+                  <th className="py-1 pr-3 font-medium">Wk</th>
+                  <th className="py-1 pr-3 font-medium">PPR</th>
+                  <th className="py-1 pr-3 font-medium">Snap%</th>
+                  <th className="py-1 pr-3 font-medium">Tgt</th>
+                  <th className="py-1 font-medium">Car</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono tabular-nums">
+                {player.recentForm.map((w) => (
+                  <tr key={w.week}>
+                    <td className="py-1 pr-3">{w.week}</td>
+                    <td className="py-1 pr-3">{w.ppr ?? "—"}</td>
+                    <td className="py-1 pr-3">{w.snapPct == null ? "—" : `${w.snapPct}%`}</td>
+                    <td className="py-1 pr-3">{w.targets ?? "—"}</td>
+                    <td className="py-1">{w.carries ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-faint mt-1 text-[11px]">Snaps and targets from the public snap feed. Routes aren’t on it.</p>
+          </div>
+        ) : (
+          <p className="text-muted-foreground mt-2 text-sm">No completed weeks on the snap feed yet.</p>
+        )}
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
-          Salary {formatSalary(player.salary)} this week. Snap charts and salary history aren’t on this feed.
+          This week: DK {formatSalary(player.dkSalary ?? player.salary)}
+          {player.fdSalary ? ` · FD ${formatSalary(player.fdSalary)}` : " · FD not priced"}.
+          Older salaries aren’t on a public 2026 archive, so they stay blank.
           {player.stats && player.position !== "DST"
             ? ` 2025 volume: ${player.stats.games}g · ${Math.round(player.stats.targets)} tgt · ${Math.round(player.stats.rushAtt)} car.`
             : ""}

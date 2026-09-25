@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { buildWeeklyDesk, type DeskBet } from "@/lib/dfs/desk";
-import { deskTighten, loadLedger, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
-import { formatAmerican, formatPct } from "@/lib/dfs/markets";
-import type { Game, Player } from "@/lib/dfs/types";
+import { deskTighten, gradePublicDesk, loadLedger, settleDesk, type GradedBet } from "@/lib/dfs/bet-ledger";
+import { formatAmerican, formatPct, gamePhase } from "@/lib/dfs/markets";
+import { buildPoolPlan } from "@/lib/dfs/pools";
+import type { Game, Player, PublicWeek } from "@/lib/dfs/types";
 import { BetDeskWeeklyGrade } from "./bet-desk-weekly-grade";
 import { BetCard, Conf, PropCard, TdLegCard } from "./bet-desk-cards";
 
@@ -40,12 +41,14 @@ export function BetDesk({
   week,
   season,
   site = "DK",
+  published = [],
 }: {
   games: Game[];
   players: Player[];
   week: number;
   season: number;
   site?: "DK" | "FD";
+  published?: PublicWeek[];
 }) {
   const [history, setHistory] = useState<GradedBet[]>([]);
   const [ledger, setLedger] = useState<GradedBet[]>([]);
@@ -55,6 +58,18 @@ export function BetDesk({
 
   const tighten = useMemo(() => deskTighten(history), [history]);
   const desk = useMemo(() => buildWeeklyDesk(games, players, tighten), [games, players, tighten]);
+  const live = useMemo(() => gradePublicDesk({ desk, games, players }), [desk, games, players]);
+  const survivor = useMemo(() => {
+    const pick = buildPoolPlan("survivor", games, 1, [], week, [], "medium").entries[0];
+    if (!pick) return null;
+    const g = games.find((x) => x.homeAbbr === pick.team || x.awayAbbr === pick.team);
+    let result: "win" | "loss" | "open" = "open";
+    if (g && g.homeScore != null && g.awayScore != null && gamePhase(g.startTime) === "final" && g.homeScore !== g.awayScore) {
+      const won = pick.team === g.homeAbbr ? g.homeScore > g.awayScore : g.awayScore > g.homeScore;
+      result = won ? "win" : "loss";
+    }
+    return `${pick.team} over ${pick.opponent} · ${result}`;
+  }, [games, week]);
 
   useEffect(() => {
     setLedger(settleDesk({ desk, games, players, week, season }));
@@ -67,6 +82,9 @@ export function BetDesk({
         week={week}
         season={season}
         tightenNotes={desk.tightenNotes}
+        live={live}
+        survivor={survivor}
+        history={published}
       />
 
       <p className="text-muted-foreground max-w-2xl text-sm">

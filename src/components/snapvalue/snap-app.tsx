@@ -178,12 +178,12 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
 
   const liveSports: Sport[] = ["NFL"];
   if (nbaData && nbaData.players.length > 0) liveSports.push("NBA");
-  if (ufcData && ufcData.players.length > 0) liveSports.push("UFC");
+  if (ufcData && (ufcData.players.length > 0 || ufcData.fights.length > 0)) liveSports.push("UFC");
 
   useEffect(() => {
     if (!accepted) return;
     if (sport === "NBA" && nba && nba.ok && nba.players.length === 0) chooseSport("NFL");
-    if (sport === "UFC" && ufc && ufc.ok && ufc.players.length === 0) chooseSport("NFL");
+    if (sport === "UFC" && ufc && ufc.ok && ufc.players.length === 0 && ufc.fights.length === 0) chooseSport("NFL");
   }, [accepted, sport, nba, ufc]);
 
   useEffect(() => {
@@ -191,8 +191,9 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
     if (sport === "NFL" && data && data.ok) {
       document.title = `SNAPVALUE — NFL DFS values, lineups, survivor · Week ${data.week}`;
     } else if (sport === "NBA") document.title = "SNAPVALUE — NBA DFS values";
+    else if (sport === "UFC" && ufc && ufc.ok) document.title = `SNAPVALUE — UFC ${ufc.headline}`;
     else if (sport === "UFC") document.title = "SNAPVALUE — UFC DFS";
-  }, [accepted, sport, data]);
+  }, [accepted, sport, data, ufc]);
 
   function chooseSite(next: "DK" | "FD") {
     setSite(next);
@@ -283,7 +284,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
   }
 
   if (sport === "UFC") {
-    if (ufc && ufc.ok && ufc.players.length === 0) return <BootScreen />;
+    if (ufc && ufc.ok && ufc.players.length === 0 && ufc.fights.length === 0) return <BootScreen />;
     return (
       <UfcShell
         ufc={ufcData}
@@ -395,6 +396,7 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
                 excludes={excludes}
                 onToggleLock={toggleLock}
                 onToggleExclude={toggleExclude}
+                site={site}
               />
               <DvpBoard data={data} />
             </>
@@ -403,7 +405,9 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
             <>
               {site === "FD" ? (
                 <p className="text-muted-foreground mb-3 text-sm">
-                  FanDuel salaries aren’t on this board yet. Lineups stay DraftKings. The bets desk prefers FanDuel when that book is posted.
+                  {data.players.some((p) => (p.fdSalary ?? 0) > 0)
+                    ? "Lineups use FanDuel salaries and a $60,000 cap. Points are DraftKings scoring minus half a point per catch."
+                    : "FanDuel salaries aren’t posted for this slate. Lineups stay DraftKings."}
                 </p>
               ) : null}
             <LineupStudio
@@ -415,12 +419,20 @@ export function SnapApp({ initial }: { initial?: SlateResponse }) {
               format={data.format ?? "classic"}
               week={data.week}
               season={data.season}
+              site={data.format === "showdown" ? "DK" : site}
             />
             </>
           )}
           {tab === "pools" && <PoolStudio games={data.games} week={data.week} season={data.season} />}
           {tab === "bets" && (
-            <BetDesk games={data.games} players={data.players} week={data.week} season={data.season} site={site} />
+            <BetDesk
+              games={data.games}
+              players={data.players}
+              week={data.week}
+              season={data.season}
+              site={site}
+              published={data.publicHistory}
+            />
           )}
           {tab === "ppr" && <PprBoard data={data} />}
         </div>
@@ -520,8 +532,15 @@ function NbaShell({
             {nba.games.length}
           </span>
           <span className="min-w-0">
-            <span className="text-faint">SOURCES </span>
-            {nba.sources.filter((s) => s.ok).map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
+            <details className="max-w-xl">
+              <summary className="cursor-pointer">
+                <span className="text-faint">DATA </span>
+                {nba.sources.filter((s) => s.ok).length} sources
+              </summary>
+              <p className="mt-1">
+                {nba.sources.filter((s) => s.ok).map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
+              </p>
+            </details>
           </span>
         </div>
         <div className="bg-background/95 sticky top-[7.25rem] z-20 mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)] backdrop-blur-md">
@@ -655,8 +674,15 @@ function UfcShell({
             {mainFights} fights
           </span>
           <span className="min-w-0">
-            <span className="text-faint">SOURCES </span>
-            {ufc.sources.filter((s) => s.ok).map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
+            <details className="max-w-xl">
+              <summary className="cursor-pointer">
+                <span className="text-faint">DATA </span>
+                {ufc.sources.filter((s) => s.ok).length} sources
+              </summary>
+              <p className="mt-1">
+                {ufc.sources.filter((s) => s.ok).map((s) => `${s.label}${s.players ? ` ${s.players}` : ""}`).join(" · ") || "—"}
+              </p>
+            </details>
           </span>
         </div>
         <div className="bg-background/95 sticky top-[7.25rem] z-20 mt-4 flex gap-1 rounded-lg bg-secondary p-1 shadow-[var(--shadow-border)] backdrop-blur-md">
@@ -781,7 +807,7 @@ function Header({
           </div>
           <p className="text-muted-foreground mt-2 max-w-xl text-sm sm:text-base">
             {sport === "UFC"
-              ? "Fight card. Spend the cap. Smash the slate."
+              ? `${ufc?.headline ?? "Fight card"}. Spend the cap. Smash the slate.`
               : sport === "NBA"
                 ? "Tonight’s board. Spend the cap. Smash the slate."
                 : `Week ${data?.week ?? ""}. Read the tape. Spend the cap. Smash the slate.`}

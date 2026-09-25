@@ -4,10 +4,10 @@ import type { UfcCard, UfcSlot } from "./types";
 
 export const UFC_CAP = 50_000;
 export const UFC_REFRESH_MS = 30 * 60 * 1000;
-export const UFC_EVENT_ID = 331;
-export const UFC_EVENT_NAME = "UFC 331";
-export const UFC_HEADLINE = "Van vs Pantoja";
-export const UFC_VENUE = "Crypto.com Arena";
+export const UFC_EVENT_ID = 0;
+export const UFC_EVENT_NAME = "UFC Fight Night";
+export const UFC_HEADLINE = "Rosas Jr. vs Barcelos";
+export const UFC_VENUE = "Meta APEX";
 export const FD_UFC_EVENT_TYPE = 26420387;
 export const FD_AK = "FhMFpcPWXMeyZxOx";
 
@@ -34,6 +34,36 @@ export const UFC_SHOWDOWN_ROSTER: { slot: UfcSlot }[] = [
   { slot: "F" },
   { slot: "F" },
   { slot: "F" },
+];
+
+/** This weekend if ESPN and DraftKings both miss. Verified Sep 25 2026 against ESPN scoreboard and ufc.com. */
+export const UFC_FN_FALLBACK: Array<{
+  a: string;
+  b: string;
+  weight: string;
+  rounds: 3 | 5;
+  card: UfcCard;
+  start: string;
+}> = [
+  { a: "Raul Rosas Jr.", b: "Raoni Barcelos", weight: "Bantamweight", rounds: 5, card: "main", start: "2026-09-27T00:00:00.000Z" },
+  { a: "Norma Dumont", b: "Ailin Perez", weight: "Women's Bantamweight", rounds: 3, card: "main", start: "2026-09-27T00:00:00.000Z" },
+  { a: "Luis Hernandez", b: "Sedriques Dumas", weight: "Light Heavyweight", rounds: 3, card: "main", start: "2026-09-27T00:00:00.000Z" },
+  { a: "Mehemmedeli Osmanli", b: "Ilimbek Akylbek Uulu", weight: "Bantamweight", rounds: 3, card: "main", start: "2026-09-27T00:00:00.000Z" },
+  { a: "Melissa Amaya", b: "Tina Black", weight: "Women's Strawweight", rounds: 3, card: "main", start: "2026-09-27T00:00:00.000Z" },
+  { a: "Brady Hiestand", b: "Rinya Nakamura", weight: "Bantamweight", rounds: 3, card: "prelims", start: "2026-09-26T21:00:00.000Z" },
+  { a: "Rodolfo Vieira", b: "Robert Bryczek", weight: "Middleweight", rounds: 3, card: "prelims", start: "2026-09-26T21:00:00.000Z" },
+  { a: "Rodolfo Bellato", b: "Christian Edwards", weight: "Light Heavyweight", rounds: 3, card: "prelims", start: "2026-09-26T21:00:00.000Z" },
+  { a: "Elves Brener", b: "Josiah Harrell", weight: "Lightweight", rounds: 3, card: "prelims", start: "2026-09-26T21:00:00.000Z" },
+  { a: "Montel Jackson", b: "Ricky Simon", weight: "Bantamweight", rounds: 3, card: "prelims", start: "2026-09-26T21:00:00.000Z" },
+  { a: "John Castaneda", b: "Alatengheili", weight: "Bantamweight", rounds: 3, card: "prelims", start: "2026-09-26T21:00:00.000Z" },
+  { a: "Vanessa Demopoulos", b: "Yazmin Jauregui", weight: "Women's Strawweight", rounds: 3, card: "prelims", start: "2026-09-26T21:00:00.000Z" },
+];
+
+/** Names on the live card. News pullouts have to match these, not last week's UFC 331 roster. */
+export const UFC_LIVE_KEYS = [
+  "rosas", "barcelos", "dumont", "perez", "hernandez", "dumas", "osmanli", "akylbek", "amaya", "black",
+  "hiestand", "nakamura", "vieira", "bryczek", "bellato", "edwards", "brener", "harrell", "jackson", "simon",
+  "castaneda", "alatengheili", "demopoulos", "jauregui",
 ];
 
 /** Confirmed UFC 331 card — used only if DK/ESPN both miss. */
@@ -139,7 +169,7 @@ export function ufc331RosterKeys(): string[] {
 }
 
 export function isUfcFightWeek(now = Date.now()): boolean {
-  return now >= Date.parse("2026-09-12T00:00:00Z") && now <= Date.parse("2026-09-20T12:00:00Z");
+  return now >= Date.parse("2026-09-24T00:00:00Z") && now <= Date.parse("2026-09-27T12:00:00Z");
 }
 
 export function ufcCacheMs(now = Date.now()): number {

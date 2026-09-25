@@ -12,12 +12,13 @@ export function buildOne(
   pool: Player[],
   locks: Player[],
   rng: () => number,
-  opts: { stackQb: boolean; valueLean: boolean; contest: ContestStyle },
+  opts: { stackQb: boolean; valueLean: boolean; contest: ContestStyle; cap?: number },
 ): Lineup | null {
   const used = new Set<string>();
   const chosen: { slot: RosterSlot; player: Player }[] = [];
   let salary = 0;
   const contest = opts.contest;
+  const cap = opts.cap ?? SALARY_CAP;
 
   const lockByPos: Partial<Record<Position, Player[]>> = {};
   for (const p of locks) {
@@ -49,7 +50,7 @@ export function buildOne(
     const leftoverAfterMin = (candidate: Player) => {
       const nextUsed = new Set(used);
       nextUsed.add(candidate.id);
-      return SALARY_CAP - salary - candidate.salary - remainingMin(remainingSlots, pool, nextUsed);
+      return cap - salary - candidate.salary - remainingMin(remainingSlots, pool, nextUsed);
     };
 
     let pick: Player | null = null;
@@ -88,7 +89,7 @@ export function buildOne(
     if (slot.slot === "QB") qb = pick;
   }
 
-  if (salary > SALARY_CAP) return null;
+  if (salary > cap) return null;
   if (chosen.length !== 9) return null;
 
   const swaps = contest === "doubleup" ? 34 : contest === "small" ? 28 : contest === "milly" ? 14 : 18;
@@ -100,7 +101,7 @@ export function buildOne(
       if (used.has(p.id) && p.id !== cur.player.id) return false;
       if (!spec.positions.includes(p.position)) return false;
       const newSalary = salary - cur.player.salary + p.salary;
-      if (newSalary > SALARY_CAP) return false;
+      if (newSalary > cap) return false;
       if (contest === "doubleup" || contest === "small") return p.projection > cur.player.projection + 0.25;
       if (contest === "milly") {
         return (
@@ -143,7 +144,7 @@ export function buildOne(
     salary,
     projection,
     value,
-    remaining: SALARY_CAP - salary,
+    remaining: cap - salary,
     stacks,
   };
 }

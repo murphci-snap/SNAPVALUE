@@ -2,7 +2,6 @@ import { getJson, poolMap, settled } from "@/lib/dfs/http";
 import { americanToProb } from "@/lib/dfs/scoring";
 import { normalizeName } from "@/lib/utils";
 import { FD_AK, FD_UFC_EVENT_TYPE } from "./constants";
-import { lastNameOf } from "./scoring";
 import type { UfcMethodMarket } from "./types";
 
 const FD_HEADERS = {
@@ -49,6 +48,24 @@ export type UfcFdFight = {
   books: string[];
 };
 
+function nameTokens(name: string): string[] {
+  const suf = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+  return normalizeName(name)
+    .split(" ")
+    .filter((p) => p && !suf.has(p));
+}
+
+/** Moneyline / method runner belongs to this fighter, not a "by KO" prop and not a Jr-only last name. */
+function runnerIsFighter(fighter: string, runner: string): boolean {
+  const rParts = nameTokens(runner);
+  const fParts = nameTokens(fighter);
+  if (!rParts.length || !fParts.length) return false;
+  const rLast = rParts[rParts.length - 1] ?? "";
+  const fLast = fParts[fParts.length - 1] ?? "";
+  if (rLast.length < 4 || rLast !== fLast) return false;
+  return rParts.every((p) => fParts.includes(p));
+}
+
 function amer(r?: FdRunner): number | null {
   const n = r?.winRunnerOdds?.americanDisplayOdds?.americanOdds;
   return typeof n === "number" && Number.isFinite(n) ? n : null;
@@ -60,20 +77,23 @@ function splitVs(name: string): { a: string; b: string } | null {
   return null;
 }
 
-function inUfc331Window(iso: string): boolean {
+function inLiveFightWindow(iso: string): boolean {
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return false;
-  // Fri Sep 18 12:00Z through Sun Sep 21 12:00Z
-  return t >= Date.parse("2026-09-18T12:00:00Z") && t <= Date.parse("2026-09-21T12:00:00Z");
+  const now = Date.now();
+  return t >= now - 20 * 3600 * 1000 && t <= now + 10 * 24 * 3600 * 1000;
+}
+
+function runnerMentions(fighter: string, runner: string): boolean {
+  const last = nameTokens(fighter).at(-1) ?? "";
+  if (last.length < 4) return false;
+  return nameTokens(runner).includes(last);
 }
 
 function methodFromRunners(runners: FdRunner[], fighter: string): UfcMethodMarket {
-  const n = normalizeName(fighter);
-  const last = normalizeName(lastNameOf(fighter));
   const hit = (r: FdRunner, kind: string) => {
     const raw = (r.runnerName ?? "").toLowerCase();
-    const mine = normalizeName(r.runnerName ?? "").includes(n) || normalizeName(r.runnerName ?? "").includes(last);
-    if (!mine) return null;
+    if (!runnerMentions(fighter, r.runnerName ?? "")) return null;
     if (kind === "ko" && /ko|tko|knockout/.test(raw)) return amer(r);
     if (kind === "sub" && /sub/.test(raw)) return amer(r);
     if (kind === "dec" && /point|decision/.test(raw)) return amer(r);
@@ -125,9 +145,8 @@ function parseMarkets(event: FdEvent, markets: FdMarket[]): UfcFdFight | null {
     const runners = m.runners ?? [];
     if (t === "MATCH_BETTING" || t.includes("MONEYLINE")) {
       for (const r of runners) {
-        const rn = normalizeName(r.runnerName ?? "");
-        if (rn === normalizeName(vs.a) || rn.includes(normalizeName(lastNameOf(vs.a)))) out.aMl = amer(r) ?? out.aMl;
-        if (rn === normalizeName(vs.b) || rn.includes(normalizeName(lastNameOf(vs.b)))) out.bMl = amer(r) ?? out.bMl;
+        if (runnerIsFighter(vs.a, r.runnerName ?? "")) out.aMl = amer(r) ?? out.aMl;
+        if (runnerIsFighter(vs.b, r.runnerName ?? "")) out.bMl = amer(r) ?? out.bMl;
       }
     }
     if (t === "HOW_FIGHT_WILL_END") out.howEnds = howEnds(runners);
@@ -154,10 +173,10 @@ function parseMarkets(event: FdEvent, markets: FdMarket[]): UfcFdFight | null {
 export function matchFdFight(row: UfcFdFight, a: string, b: string): boolean {
   const names = [normalizeName(row.aName), normalizeName(row.bName)];
   const want = [normalizeName(a), normalizeName(b)];
-  const lasts = [normalizeName(lastNameOf(row.aName)), normalizeName(lastNameOf(row.bName))];
-  const wantLast = [normalizeName(lastNameOf(a)), normalizeName(lastNameOf(b))];
-  return want.every((n) => names.some((x) => x === n || x.includes(n) || n.includes(x)))
-    || wantLast.every((n) => lasts.includes(n));
+  if (want.every((n) => names.some((x) => x === n || x.includes(n) || n.includes(x)))) return true;
+  const rowLast = [nameTokens(row.aName).at(-1), nameTokens(row.bName).at(-1)].filter((n): n is string => Boolean(n && n.length >= 4));
+  const wantLast = [nameTokens(a).at(-1), nameTokens(b).at(-1)].filter((n): n is string => Boolean(n && n.length >= 4));
+  return wantLast.length === 2 && wantLast.every((n) => rowLast.includes(n));
 }
 
 export async function loadUfcFd(): Promise<{ fights: UfcFdFight[]; ok: boolean }> {
@@ -170,7 +189,7 @@ export async function loadUfcFd(): Promise<{ fights: UfcFdFight[]; ok: boolean }
   );
   const events = Object.values(page?.attachments?.events ?? {}).filter((e): e is FdEvent => Boolean(e?.name));
   const listing = Object.values(page?.attachments?.markets ?? {});
-  const live = events.filter((e) => inUfc331Window(e.startTime || e.openDate || ""));
+  const live = events.filter((e) => inLiveFightWindow(e.startTime || e.openDate || ""));
   const byEvent = new Map<string, FdMarket[]>();
   for (const m of listing) {
     const id = String(m.eventId ?? "");

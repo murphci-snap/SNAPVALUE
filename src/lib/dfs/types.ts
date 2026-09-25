@@ -178,6 +178,29 @@ export interface Player {
     recTd: number;
     passTd: number;
   } | null;
+  /** FanDuel salary when that book has posted this slate. Absent means not priced. */
+  fdSalary?: number | null;
+  /** DraftKings salary kept when the board is showing FanDuel prices. */
+  dkSalary?: number | null;
+  /** Completed weeks from the public snap feed. Routes are not on that feed. */
+  recentForm?: WeekForm[];
+}
+
+export interface WeekForm {
+  week: number;
+  ppr: number | null;
+  snaps: number | null;
+  snapPct: number | null;
+  targets: number | null;
+  carries: number | null;
+}
+
+export interface PublicWeek {
+  week: number;
+  w: number;
+  l: number;
+  open: number;
+  survivor: string | null;
 }
 
 export type SlateWindow =
@@ -233,6 +256,8 @@ export interface SlateData {
   sources: DataSourceInfo[];
   window?: SlateWindow;
   stale?: boolean;
+  /** Same card for every visitor. Older weeks stay empty until they were published here. */
+  publicHistory?: PublicWeek[];
 }
 
 export interface SlateError {
